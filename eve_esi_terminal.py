@@ -159,8 +159,8 @@ def cmd_whoami():
     print(f"\nLogged in as {info['CharacterName']} (character_id {info['CharacterID']})\n")
 
 
-def get_wallet_balance():
-    char_id = eve_sso_auth.get_character_id()
+def get_wallet_balance(char_id=None):
+    char_id = char_id or eve_sso_auth.get_character_id()
     return _auth_get(f"/characters/{char_id}/wallet/", datasource="tranquility")
 
 
@@ -168,8 +168,8 @@ def cmd_wallet():
     print(f"\nWallet balance: {get_wallet_balance():,.2f} ISK\n")
 
 
-def get_skills_summary():
-    char_id = eve_sso_auth.get_character_id()
+def get_skills_summary(char_id=None):
+    char_id = char_id or eve_sso_auth.get_character_id()
     data = _auth_get(f"/characters/{char_id}/skills/", datasource="tranquility")
     return {
         "total_sp": data["total_sp"],
@@ -186,8 +186,8 @@ def cmd_skills():
     print(f"Skills trained: {data['skills_trained']}\n")
 
 
-def get_location_data():
-    char_id = eve_sso_auth.get_character_id()
+def get_location_data(char_id=None):
+    char_id = char_id or eve_sso_auth.get_character_id()
     loc = _auth_get(f"/characters/{char_id}/location/", datasource="tranquility")
     sys_data = get(f"/universe/systems/{loc['solar_system_id']}/", datasource="tranquility")
     return {"system_name": sys_data["name"], "security_status": sys_data["security_status"]}
@@ -249,8 +249,8 @@ def cmd_mining():
     print()
 
 
-def get_blueprints_data(limit=25):
-    char_id = eve_sso_auth.get_character_id()
+def get_blueprints_data(limit=25, char_id=None):
+    char_id = char_id or eve_sso_auth.get_character_id()
     bps = _auth_get(f"/characters/{char_id}/blueprints/", datasource="tranquility")
     rows = []
     for b in bps[:limit]:

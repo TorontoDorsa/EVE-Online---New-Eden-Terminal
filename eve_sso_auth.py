@@ -58,6 +58,7 @@ TOKEN_URL = "https://login.eveonline.com/v2/oauth/token"
 
 TOKEN_FILE = os.path.join(_app_data_dir(), "esi_token.json")
 CREDENTIALS_FILE = os.path.join(_app_data_dir(), "eve_credentials.json")
+CHARACTERS_FILE = os.path.join(_app_data_dir(), "characters.json")
 
 
 def _load_saved_credentials():
@@ -157,8 +158,10 @@ class _CallbackHandler(http.server.BaseHTTPRequestHandler):
         pass  # silence default request logging
 
 
-def login(scopes=None):
-    """Run the interactive OAuth flow and save tokens to TOKEN_FILE."""
+def _run_oauth_flow(scopes):
+    """Runs the interactive browser OAuth flow and returns the raw token
+    response dict. Shared by add_character()/login() — what happens to
+    the result afterward is the only difference between them."""
     _require_credentials()
     scopes = scopes or DEFAULT_SCOPES
     state = secrets.token_urlsafe(24)
@@ -191,11 +194,45 @@ def login(scopes=None):
         print("State mismatch — possible CSRF issue, aborting.")
         sys.exit(1)
 
-    tokens = _exchange_code(server.auth_code)
-    _save_tokens(tokens)
-    info = verify_token(tokens["access_token"])
-    print(f"\nLogged in as {info['CharacterName']} (character_id {info['CharacterID']})")
-    print(f"Token saved to {TOKEN_FILE}\n")
+    return _exchange_code(server.auth_code)
+
+
+_login_lock = threading.Lock()
+
+
+def add_character(scopes=None):
+    """Runs the OAuth flow and adds the resulting character to the
+    multi-character store, activating it — used both for the very first
+    login and for adding a second (or further) character, from any EVE
+    account (EVE's own SSO login screen decides which account/character
+    gets authorized; this app doesn't restrict it). Guarded against a
+    second concurrent invocation with a non-blocking lock, since the
+    localhost callback server can only bind CALLBACK_PORT once at a
+    time — a second click while one login is already in progress would
+    otherwise raise an ugly "address already in use" error."""
+    if not _login_lock.acquire(blocking=False):
+        print("A login is already in progress — finish or cancel it first.")
+        sys.exit(1)
+    try:
+        tokens = _run_oauth_flow(scopes)
+        info = verify_token(tokens["access_token"])
+        char_id = info["CharacterID"]
+        with _token_lock:
+            store = _load_store()
+            store["characters"][str(char_id)] = {**tokens, "character_name": info["CharacterName"]}
+            store["active_character_id"] = char_id
+            _save_store(store)
+        print(f"\nLogged in as {info['CharacterName']} (character_id {char_id})")
+        print(f"Token saved to {CHARACTERS_FILE}\n")
+        return info
+    finally:
+        _login_lock.release()
+
+
+def login(scopes=None):
+    """Back-compat entry point (CLI `python eve_sso_auth.py login`,
+    eve_web.py's original /api/login) — same as add_character()."""
+    add_character(scopes)
 
 
 def _exchange_code(code):
@@ -219,35 +256,102 @@ def _token_request(body):
     return r.json()
 
 
-def _save_tokens(tokens):
-    """Writes to a temp file then renames it into place — os.replace() is
-    atomic on both POSIX and Windows, so a concurrent _load_tokens() call
-    (get_access_token() is called from many threads in parallel by
-    dashboard.get_dashboard_data()) can never observe a half-written or
-    truncated file the way a plain open(TOKEN_FILE, "w") could."""
-    tmp_path = f"{TOKEN_FILE}.tmp"
+def _save_store(store):
+    """Writes the WHOLE multi-character store to a temp file then renames
+    it into place — os.replace() is atomic on both POSIX and Windows, so
+    a concurrent _load_store() call (get_access_token() is called from
+    many threads in parallel by dashboard.get_dashboard_data()) can never
+    observe a half-written or truncated file the way a plain
+    open(CHARACTERS_FILE, "w") could. Always the FULL store, never just
+    one character's entry — writing a partial store here would silently
+    destroy every other saved character's login."""
+    tmp_path = f"{CHARACTERS_FILE}.tmp"
     with open(tmp_path, "w") as f:
-        json.dump(tokens, f, indent=2)
+        json.dump(store, f, indent=2)
     try:
         os.chmod(tmp_path, 0o600)  # owner read/write only, where the OS supports it
     except OSError:
         pass
-    os.replace(tmp_path, TOKEN_FILE)
+    os.replace(tmp_path, CHARACTERS_FILE)
 
 
-def _load_tokens():
-    if not os.path.exists(TOKEN_FILE):
-        return None
-    with open(TOKEN_FILE) as f:
-        return json.load(f)
+def _load_store():
+    """Loads the multi-character store, {"active_character_id": int or
+    None, "characters": {str(character_id): {..raw token fields..,
+    "character_name": str}}}. Auto-migrates a legacy single-character
+    esi_token.json the first time this runs after upgrading (a pure
+    local JWT decode, no ESI call — works whether the access token is
+    expired or not, since verify_token() never checks expiry), so an
+    already-saved login survives with no forced re-authentication. Only
+    triggers once: after migration, CHARACTERS_FILE exists, so this
+    branch is never reached again."""
+    if os.path.exists(CHARACTERS_FILE):
+        with open(CHARACTERS_FILE) as f:
+            return json.load(f)
+
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE) as f:
+            legacy_tokens = json.load(f)
+        info = verify_token(legacy_tokens["access_token"])
+        char_id = info["CharacterID"]
+        store = {
+            "active_character_id": char_id,
+            "characters": {str(char_id): {**legacy_tokens, "character_name": info["CharacterName"]}},
+        }
+        _save_store(store)
+        return store
+
+    return {"active_character_id": None, "characters": {}}
+
+
+def list_characters():
+    """Every saved character's id/name — reads the store directly, no ESI
+    call, so a character switcher can populate instantly."""
+    store = _load_store()
+    return [
+        {"character_id": int(cid), "character_name": data.get("character_name") or f"Character {cid}"}
+        for cid, data in store["characters"].items()
+    ]
+
+
+def get_active_character_id():
+    return _load_store().get("active_character_id")
+
+
+def set_active_character(character_id):
+    """Switches which saved character get_access_token()/get_character_id()
+    resolve to. Raises KeyError if character_id isn't a saved character."""
+    with _token_lock:
+        store = _load_store()
+        if str(character_id) not in store["characters"]:
+            raise KeyError(f"No saved character with id {character_id}")
+        store["active_character_id"] = int(character_id)
+        _save_store(store)
+
+
+def remove_character(character_id):
+    """Removes one saved character. If it was the active one, auto-
+    activates another remaining character if any exist, else clears
+    active_character_id. No-op if character_id isn't saved."""
+    with _token_lock:
+        store = _load_store()
+        cid_str = str(character_id)
+        if cid_str not in store["characters"]:
+            return
+        del store["characters"][cid_str]
+        if store.get("active_character_id") == int(character_id):
+            remaining = list(store["characters"].keys())
+            store["active_character_id"] = int(remaining[0]) if remaining else None
+        _save_store(store)
 
 
 def logout():
-    """Deletes the saved token file, if any. Local-only — EVE's SSO has no
-    server-side session to revoke for this flow; the next login just starts
-    a fresh authorization from scratch."""
-    if os.path.exists(TOKEN_FILE):
-        os.remove(TOKEN_FILE)
+    """Removes the currently active character. Local-only — EVE's SSO has
+    no server-side session to revoke for this flow; logging back in just
+    starts a fresh authorization from scratch."""
+    active_id = get_active_character_id()
+    if active_id is not None:
+        remove_character(active_id)
 
 
 def verify_token(access_token):
@@ -267,18 +371,22 @@ _token_lock = threading.Lock()
 
 
 def get_access_token():
-    """Returns a valid access token, refreshing via the stored refresh token
-    if needed. Serialized with a lock — dashboard.get_dashboard_data() now
-    calls this from many threads in parallel (every ESI-backed section
-    fetches its own access token), and without the lock they'd all hit
-    EVE's SSO token endpoint at once for the same refresh token, which is
-    both wasteful and pointless to run concurrently — one refresh is
-    enough for all of them."""
+    """Returns a valid access token for the currently ACTIVE character,
+    refreshing via its stored refresh token if needed. Serialized with a
+    lock — dashboard.get_dashboard_data() calls this from many threads in
+    parallel (every ESI-backed section fetches its own access token), and
+    without the lock they'd all hit EVE's SSO token endpoint at once for
+    the same refresh token, and race writing the shared multi-character
+    store. Every other caller in the codebase still calls this with zero
+    arguments and gets back exactly what it always has — "the" token now
+    just means "the active character's" underneath."""
     with _token_lock:
-        tokens = _load_tokens()
-        if not tokens:
+        store = _load_store()
+        active_id = store.get("active_character_id")
+        if not active_id or str(active_id) not in store["characters"]:
             print("No saved login found. Run: python eve_sso_auth.py login")
             sys.exit(1)
+        tokens = store["characters"][str(active_id)]
 
         # Always attempt a refresh — access tokens are short-lived (~20 min),
         # and refresh is cheap/fast, so this avoids tracking expiry manually.
@@ -288,7 +396,10 @@ def get_access_token():
             print(f"Token refresh failed: {e}\nTry logging in again: python eve_sso_auth.py login")
             sys.exit(1)
 
-        _save_tokens(new_tokens)
+        # Read-merge-write: update only the active character's entry within
+        # the full store, so every other saved character's login survives.
+        store["characters"][str(active_id)] = {**new_tokens, "character_name": tokens.get("character_name")}
+        _save_store(store)
         return new_tokens["access_token"]
 
 

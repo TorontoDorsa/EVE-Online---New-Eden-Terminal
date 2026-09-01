@@ -66,13 +66,13 @@ def get_skill_descriptions(skill_ids):
     return dict(_DESCRIPTION_CACHE)
 
 
-def get_current_training_data():
+def get_current_training_data(char_id=None):
     """The skill queue's currently active entry (queue_position 0), if training is running."""
     if esi.eve_sso_auth is None:
         print("eve_sso_auth.py not found — put it in the same folder as this script.")
         sys.exit(1)
 
-    char_id = esi.eve_sso_auth.get_character_id()
+    char_id = char_id or esi.eve_sso_auth.get_character_id()
     try:
         queue = esi._auth_get(f"/characters/{char_id}/skillqueue/")
     except requests.RequestException:
@@ -151,7 +151,7 @@ def get_skill_plan_data(category="Mining"):
     return _gap_rows(category, trained, queued, descriptions)
 
 
-def get_all_skill_plans_data():
+def get_all_skill_plans_data(char_id=None):
     """Every category's gap rows, keyed by category name, plus the full
     trained-skill dict (skill_id -> level, every trained skill, not just
     the ~510 tracked ones) so callers like ship-eligibility checks can
@@ -160,7 +160,7 @@ def get_all_skill_plans_data():
         print("eve_sso_auth.py not found — put it in the same folder as this script.")
         sys.exit(1)
 
-    char_id = esi.eve_sso_auth.get_character_id()
+    char_id = char_id or esi.eve_sso_auth.get_character_id()
     trained, queued = _fetch_trained_and_queued(char_id)
     descriptions = get_skill_descriptions(SKILL_TYPE_IDS.values())
 

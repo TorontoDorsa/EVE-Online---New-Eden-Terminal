@@ -112,8 +112,7 @@ _HULL_STAT_ATTRS = {
 }
 
 
-def get_ship_data():
-    char_id = auth.get_character_id()
+def get_ship_data(char_id):
     ship = esi._auth_get(f"/characters/{char_id}/ship/", datasource="tranquility")
     type_id = ship["ship_type_id"]
     type_data = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
@@ -148,21 +147,19 @@ def get_portrait_data_uri(char_id):
         return ""
 
 
-def get_corporation_data():
+def get_corporation_data(char_id):
     """Public endpoint — no auth needed beyond knowing the character's corp_id."""
-    char_id = auth.get_character_id()
     corp_id = esi.get_corporation_id(char_id)
     corp = esi.get(f"/corporations/{corp_id}/", datasource="tranquility")
     return {"id": corp_id, "name": corp["name"], "ticker": corp["ticker"]}
 
 
-def _ship():
-    ship = get_ship_data()
+def _ship(char_id):
+    ship = get_ship_data(char_id)
     print(f"  Current ship : {ship['type_name']} ({ship['ship_name']})")
 
 
-def get_assets_data(top_n=8):
-    char_id = auth.get_character_id()
+def get_assets_data(char_id, top_n=8):
     assets = esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
     if not assets:
         return {"total_items": 0, "distinct_locations": 0, "top_items": []}
@@ -179,8 +176,8 @@ def get_assets_data(top_n=8):
     }
 
 
-def _assets_summary():
-    data = get_assets_data()
+def _assets_summary(char_id):
+    data = get_assets_data(char_id)
     if not data["top_items"] and data["total_items"] == 0:
         print("  No assets found.")
         return
@@ -191,8 +188,7 @@ def _assets_summary():
         print(f"    {item['name']:<28} x{item['quantity']:,}")
 
 
-def get_active_jobs_data():
-    char_id = auth.get_character_id()
+def get_active_jobs_data(char_id):
     jobs = esi._auth_get(f"/characters/{char_id}/industry/jobs/", datasource="tranquility")
     active = [j for j in jobs if j["status"] == "active"]
     prices = mr.get_prices()
@@ -208,8 +204,8 @@ def get_active_jobs_data():
     return result
 
 
-def _active_jobs():
-    active = get_active_jobs_data()
+def _active_jobs(char_id):
+    active = get_active_jobs_data(char_id)
     if not active:
         print("  No active industry jobs.")
         return
@@ -226,14 +222,13 @@ _WALLET_ACTIVITY_REF_TYPES = {
 }
 
 
-def get_net_isk_data(days):
+def get_net_isk_data(char_id, days):
     """Net ISK (earned minus spent) from the wallet journal over the last N
     days, plus a real ref_type breakdown (mission rewards, NPC bounty
     prizes, industry-related entries — verified live against this
     character's real journal) used by _build_character_profile() to
     ground theme detection/tip personalization in real financial
     activity, not just skill training ratios."""
-    char_id = auth.get_character_id()
     entries = mr._paged_get(f"/characters/{char_id}/wallet/journal/")
     cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
     recent = [e for e in entries if e.get("date", "") >= cutoff]
@@ -284,10 +279,9 @@ def _categorize_mining_type(type_id):
     return "Other"
 
 
-def get_mining_breakdown_data(days):
+def get_mining_breakdown_data(char_id, days):
     """Mined quantity/value over the window, bucketed into Ore/Ice/Gas/Other
     and broken out per resource type within each."""
-    char_id = auth.get_character_id()
     entries = esi._auth_get(f"/characters/{char_id}/mining/", datasource="tranquility")
     cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     entries = [e for e in entries if e["date"] >= cutoff]
@@ -462,8 +456,7 @@ def get_market_order_tips(char_id, limit=3):
     return tips, stats
 
 
-def get_mining_throughput_data(days, hours_per_day):
-    char_id = auth.get_character_id()
+def get_mining_throughput_data(char_id, days, hours_per_day):
     entries = esi._auth_get(f"/characters/{char_id}/mining/", datasource="tranquility")
     cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     entries = [e for e in entries if e["date"] >= cutoff]
@@ -492,11 +485,10 @@ def get_mining_throughput_data(days, hours_per_day):
     }
 
 
-def get_sales_throughput_data(days, hours_per_day):
+def get_sales_throughput_data(char_id, days, hours_per_day):
     """ISK actually received from market sell transactions — real transaction
     prices, not an estimate (unlike mining, which prices ore at market average
     since raw ore itself isn't what gets sold)."""
-    char_id = auth.get_character_id()
     transactions = esi._auth_get(f"/characters/{char_id}/wallet/transactions/", datasource="tranquility")
     cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
     sells = [t for t in transactions if not t["is_buy"] and t["date"][:10] >= cutoff]
@@ -525,8 +517,8 @@ def get_sales_throughput_data(days, hours_per_day):
     }
 
 
-def _mining_throughput(days, hours_per_day):
-    data = get_mining_throughput_data(days, hours_per_day)
+def _mining_throughput(char_id, days, hours_per_day):
+    data = get_mining_throughput_data(char_id, days, hours_per_day)
     if not data["daily"]:
         print(f"  No mining ledger entries in the last {days} days.")
         return
@@ -545,7 +537,7 @@ def _mining_throughput(days, hours_per_day):
 OMEGA_PLEX_COST = 500  # CCP's fixed rate: 500 PLEX = 30 days of Omega
 
 
-def get_plex_data(vault_plex_owned=0):
+def get_plex_data(char_id, vault_plex_owned=0):
     """Current PLEX price, plus the ISK cost of 1 month of Omega.
 
     PLEX no longer trades through the regular regional order book (CCP moved
@@ -571,7 +563,6 @@ def get_plex_data(vault_plex_owned=0):
     prices = mr.get_prices()
     avg_price = prices.get(type_id)
 
-    char_id = auth.get_character_id()
     assets = esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
     loose_owned_qty = sum(a.get("quantity", 0) for a in assets if a["type_id"] == type_id)
     owned_qty = loose_owned_qty + vault_plex_owned
@@ -1103,25 +1094,32 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
     char_id = info["CharacterID"]
 
     with ThreadPoolExecutor(max_workers=20) as pool:
-        f_mining_breakdown = pool.submit(get_mining_breakdown_data, mining_days)
-        f_skill_plans = pool.submit(skill_plan.get_all_skill_plans_data)
-        f_corp_overview = pool.submit(corp_overview.get_corp_overview_data)
-        f_ship = pool.submit(get_ship_data)
-        f_active_jobs = pool.submit(get_active_jobs_data)
+        # char_id is resolved once, above, and passed explicitly into every
+        # section below rather than letting each one re-derive it via
+        # auth.get_character_id() independently — with multi-character
+        # support, "the active character" can change between when this
+        # request started and when any given thread actually runs (a fetch
+        # can take up to 90s), so re-deriving mid-flight could silently mix
+        # two different characters' data into one response.
+        f_mining_breakdown = pool.submit(get_mining_breakdown_data, char_id, mining_days)
+        f_skill_plans = pool.submit(skill_plan.get_all_skill_plans_data, char_id)
+        f_corp_overview = pool.submit(corp_overview.get_corp_overview_data, char_id)
+        f_ship = pool.submit(get_ship_data, char_id)
+        f_active_jobs = pool.submit(get_active_jobs_data, char_id)
         f_market_order_tips = pool.submit(get_market_order_tips, char_id, 2)
-        f_wallet = pool.submit(esi.get_wallet_balance)
-        f_net_isk = pool.submit(get_net_isk_data, mining_days)
-        f_location = pool.submit(esi.get_location_data)
-        f_skills_summary = pool.submit(esi.get_skills_summary)
-        f_assets = pool.submit(get_assets_data)
-        f_blueprints = pool.submit(esi.get_blueprints_data, limit=25)
-        f_current_training = pool.submit(skill_plan.get_current_training_data)
-        f_mining = pool.submit(get_mining_throughput_data, mining_days, hours_per_day)
-        f_sales = pool.submit(get_sales_throughput_data, mining_days, hours_per_day)
+        f_wallet = pool.submit(esi.get_wallet_balance, char_id)
+        f_net_isk = pool.submit(get_net_isk_data, char_id, mining_days)
+        f_location = pool.submit(esi.get_location_data, char_id)
+        f_skills_summary = pool.submit(esi.get_skills_summary, char_id)
+        f_assets = pool.submit(get_assets_data, char_id)
+        f_blueprints = pool.submit(esi.get_blueprints_data, limit=25, char_id=char_id)
+        f_current_training = pool.submit(skill_plan.get_current_training_data, char_id)
+        f_mining = pool.submit(get_mining_throughput_data, char_id, mining_days, hours_per_day)
+        f_sales = pool.submit(get_sales_throughput_data, char_id, mining_days, hours_per_day)
         f_zkill = pool.submit(zkillboard.get_zkill_data, char_id)
         f_zkill_global = pool.submit(zkillboard.get_global_top_kill)
-        f_plex = pool.submit(get_plex_data, vault_plex_owned)
-        f_corporation = pool.submit(get_corporation_data)
+        f_plex = pool.submit(get_plex_data, char_id, vault_plex_owned)
+        f_corporation = pool.submit(get_corporation_data, char_id)
         f_portrait = pool.submit(get_portrait_data_uri, char_id)
 
         mining_breakdown, mining_breakdown_perm = _scoped_result(
@@ -1277,17 +1275,18 @@ def generate_dashboard(mining_days=7, hours_per_day=None):
         sys.exit(1)
 
     info = auth.verify_token(auth.get_access_token())
+    char_id = info["CharacterID"]
     banner = "=" * 60
-    print(f"\n{banner}\nDASHBOARD — {info['CharacterName']} (character_id {info['CharacterID']})\n{banner}")
+    print(f"\n{banner}\nDASHBOARD — {info['CharacterName']} (character_id {char_id})\n{banner}")
 
     _header("CURRENT STATE")
     esi.cmd_wallet()
     esi.cmd_location()
-    _ship()
+    _ship(char_id)
     esi.cmd_skills()
 
     _header("ASSETS & BLUEPRINTS")
-    _assets_summary()
+    _assets_summary(char_id)
     print()
     esi.cmd_blueprints()
 
@@ -1295,10 +1294,10 @@ def generate_dashboard(mining_days=7, hours_per_day=None):
     skill_plan.generate_mining_plan()
 
     _header("PLANS: ACTIVE INDUSTRY JOBS")
-    _active_jobs()
+    _active_jobs(char_id)
 
     _header(f"MINING THROUGHPUT (last {mining_days} days)")
-    _mining_throughput(mining_days, hours_per_day)
+    _mining_throughput(char_id, mining_days, hours_per_day)
     print()
 
 

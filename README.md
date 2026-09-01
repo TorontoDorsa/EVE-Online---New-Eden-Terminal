@@ -6,6 +6,7 @@ local web dashboard, and a desktop app that opens that same dashboard
 as an ordinary page in your regular browser (not a wrapped window) —
 plus a few standalone reports:
 
+- **Multiple characters** — save more than one EVE character (from the same account or a different one) and switch between their dashboards from a topbar dropdown, one at a time
 - **Character/corp status** — location, ship, skills & skill queue, wallet, assets, blueprints, industry jobs
 - **Combined dashboard** — one view of all of the above, plus mining throughput and ISK/hour, loaded concurrently so a full refresh takes seconds rather than the sum of every section fetched one at a time
 - **Skill group browser** — pick any of EVE's own ~21 real skill groups (Drones, Gunnery, Navigation, Spaceship Command, ...) from a dropdown and see every skill in it as a row of 5 pips — light for trained, dark for untrained — the same shape as the in-game Character Sheet
@@ -56,9 +57,14 @@ Character/corp-specific commands authenticate via EVE SSO (OAuth2).
    ```
 
    This opens your browser, walks you through EVE SSO, and saves a
-   token file (`esi_token.json`) locally. That file holds your refresh
-   token — treat it like a password. It's already listed in
-   `.gitignore` and should never be committed or shared.
+   token file (`characters.json`) locally. That file holds a refresh
+   token per saved character — treat it like a password. It's already
+   listed in `.gitignore` and should never be committed or shared. The
+   web dashboard and desktop app both support saving more than one
+   character this same way — a character switcher in the dashboard's
+   topbar lets you add further characters (from the same EVE account or
+   a different one — EVE SSO doesn't restrict this) and switch between
+   their dashboards, one at a time.
 
 ## Usage
 
@@ -152,8 +158,11 @@ rerun the command above any time the source changes.
 
 ## A note on data & privacy
 
-Everything this project generates about *your* character or corp
-(`esi_token.json`, `dashboard_data.json`, `corp_overview_data.json`,
+Everything this project generates about *your* character(s) or corp
+(`characters.json` — every saved character's login, holds a refresh
+token per character, treat it like a password — `esi_token.json` [the
+older single-character format, kept around if it already exists but no
+longer written], `dashboard_data.json`, `corp_overview_data.json`,
 `skill_plans_with_desc.json`, `portrait_data_uri.txt`, `eve_history.db`,
 generated mining reports) is written to your local disk and is already
 excluded via `.gitignore`. If you fork or share this project, double-check

@@ -1,5 +1,6 @@
 # --- Secrets & personal account data (never commit these) ---
 esi_token.json
+characters.json
 eve_credentials.json
 dashboard_data.json
 corp_overview_data.json

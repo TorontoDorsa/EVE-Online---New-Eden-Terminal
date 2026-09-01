@@ -147,8 +147,48 @@ def api_dashboard():
 
 @app.route("/api/status")
 def api_status():
-    logged_in = auth is not None and os.path.exists(auth.TOKEN_FILE)
-    return jsonify({"logged_in": logged_in})
+    characters = auth.list_characters() if auth is not None else []
+    active_id = auth.get_active_character_id() if characters else None
+    active_name = next((c["character_name"] for c in characters if c["character_id"] == active_id), None)
+    return jsonify({
+        "logged_in": bool(characters),
+        "active_character_id": active_id,
+        "active_character_name": active_name,
+    })
+
+
+@app.route("/api/characters")
+def api_characters():
+    return jsonify({
+        "characters": auth.list_characters(),
+        "active_character_id": auth.get_active_character_id(),
+    })
+
+
+@app.route("/api/characters/switch", methods=["POST"])
+def api_characters_switch():
+    data = request.get_json(force=True) or {}
+    try:
+        auth.set_active_character(data.get("character_id"))
+        return jsonify({"ok": True})
+    except KeyError as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/api/characters/add", methods=["POST"])
+def api_characters_add():
+    """Runs the same OAuth flow as /api/login, but framed for adding a
+    second (or further) character rather than the first login — the
+    underlying auth.add_character() call handles both cases identically."""
+    output, error = _capture(auth.add_character)
+    return jsonify({"ok": error is None, "output": output, "error": error})
+
+
+@app.route("/api/characters/remove", methods=["POST"])
+def api_characters_remove():
+    data = request.get_json(force=True) or {}
+    auth.remove_character(data.get("character_id"))
+    return jsonify({"ok": True})
 
 
 @app.route("/api/login", methods=["POST"])

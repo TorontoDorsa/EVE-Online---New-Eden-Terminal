@@ -118,12 +118,12 @@ def get_corp_structures_data(corp_id):
     return {"available": True, "reason": None, "fixable_by_login": False, "structures": rows}
 
 
-def get_corp_overview_data():
+def get_corp_overview_data(char_id=None):
     if esi.eve_sso_auth is None:
         print("eve_sso_auth.py not found — put it in the same folder as this script.")
         sys.exit(1)
 
-    char_id = auth.get_character_id()
+    char_id = char_id or auth.get_character_id()
     corp_id = esi.get_corporation_id(char_id)
     corp = esi.get(f"/corporations/{corp_id}/", datasource="tranquility")
 

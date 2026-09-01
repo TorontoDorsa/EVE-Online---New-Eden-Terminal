@@ -674,6 +674,19 @@
   }
   #login-status.logged-in { color: var(--status-ok); }
   #login-status.logging-in { color: var(--accent); }
+  #character-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 6px 10px;
+    cursor: pointer;
+    max-width: 220px;
+  }
+  #character-select:disabled { opacity: 0.5; cursor: default; }
+  #character-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .topbar-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .topbar-controls label {
     font-size: 11px;
@@ -870,7 +883,10 @@
 <div class="topbar">
   <div class="topbar-left">
     <span id="login-status">● CHECKING…</span>
-    <button class="topbar-btn" id="login-btn">Login via EVE SSO</button>
+    <select id="character-select" disabled>
+      <option value="__add__">+ Add character…</option>
+    </select>
+    <button class="topbar-btn" id="logout-btn" disabled>Logout</button>
   </div>
   <div class="topbar-controls">
     <button class="topbar-btn" id="refresh-btn" disabled>Refresh</button>
@@ -1953,32 +1969,44 @@ function initTabs() {
 
 
 
-const DASHBOARD_CACHE_KEY = "eve-dashboard-cached-data";
-const DASHBOARD_CACHE_TIME_KEY = "eve-dashboard-cached-time";
+// Namespaced by character id — with multiple saved characters, a bare
+// shared key would flash the PREVIOUS character's full dashboard (name,
+// portrait, wallet, assets) for several seconds after switching, and
+// switching back to a recently-viewed character would show a blank
+// loading screen instead of its own correct cached data.
+function _cacheKeys(charId) {
+  return {
+    data: `eve-dashboard-cached-data:${charId}`,
+    time: `eve-dashboard-cached-time:${charId}`,
+  };
+}
 
-function saveDashboardCache(data, timestamp) {
+function saveDashboardCache(data, timestamp, charId) {
   try {
-    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
-    localStorage.setItem(DASHBOARD_CACHE_TIME_KEY, timestamp.toISOString());
+    const keys = _cacheKeys(charId);
+    localStorage.setItem(keys.data, JSON.stringify(data));
+    localStorage.setItem(keys.time, timestamp.toISOString());
   } catch (e) {
     // storage unavailable (private window, quota, blocked) — cache is a
     // convenience only, skip it silently
   }
 }
 
-function clearDashboardCache() {
+function clearDashboardCache(charId) {
   try {
-    localStorage.removeItem(DASHBOARD_CACHE_KEY);
-    localStorage.removeItem(DASHBOARD_CACHE_TIME_KEY);
+    const keys = _cacheKeys(charId);
+    localStorage.removeItem(keys.data);
+    localStorage.removeItem(keys.time);
   } catch (e) {
     // storage unavailable — nothing to clear
   }
 }
 
-function loadDashboardCache() {
+function loadDashboardCache(charId) {
   try {
-    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
-    const ts = localStorage.getItem(DASHBOARD_CACHE_TIME_KEY);
+    const keys = _cacheKeys(charId);
+    const raw = localStorage.getItem(keys.data);
+    const ts = localStorage.getItem(keys.time);
     if (!raw || !ts) return false;
     DATA = JSON.parse(raw);
     dataTimestamp = new Date(ts);
@@ -2042,7 +2070,7 @@ async function loadDashboard() {
           if (isLoginError(error)) {
             showBanner(error, true, {
               label: "Login via EVE SSO",
-              onClick: () => document.getElementById("login-btn").click(),
+              onClick: () => addCharacter(),
             });
           } else {
             showBanner(error, true, { label: "Retry", onClick: loadDashboard });
@@ -2054,7 +2082,7 @@ async function loadDashboard() {
         dataIsCached = false;
         render();
         document.getElementById("content").className = "show";
-        saveDashboardCache(DATA, dataTimestamp);
+        saveDashboardCache(DATA, dataTimestamp, activeCharacterId);
         return;
       } catch (e) {
         lastError = e;
@@ -2140,12 +2168,13 @@ document.addEventListener("click", e => {
   }
   const loginBtn = e.target.closest(".section-banner-action");
   if (loginBtn) {
-    document.getElementById("login-btn").click();
+    addCharacter();
   }
 });
 
 
 let isLoggedIn = false;
+let activeCharacterId = null;
 
 function setRefreshButtonsEnabled(enabled) {
   [
@@ -2155,17 +2184,40 @@ function setRefreshButtonsEnabled(enabled) {
   ].forEach(b => { b.disabled = !enabled; });
 }
 
+function populateCharacterSelect(characters, activeId) {
+  const select = document.getElementById("character-select");
+  select.innerHTML = "";
+  for (const c of characters) {
+    const opt = document.createElement("option");
+    opt.value = String(c.character_id);
+    opt.textContent = c.character_name;
+    select.appendChild(opt);
+  }
+  const addOpt = document.createElement("option");
+  addOpt.value = "__add__";
+  addOpt.textContent = "+ Add character…";
+  select.appendChild(addOpt);
+  select.value = activeId ? String(activeId) : "__add__";
+  select.disabled = false;
+}
+
 async function refreshStatus(isRetry) {
   try {
     const res = await fetch("/api/status");
     const data = await res.json();
     const el = document.getElementById("login-status");
-    const loginBtn = document.getElementById("login-btn");
+    const logoutBtn = document.getElementById("logout-btn");
     isLoggedIn = data.logged_in;
+    activeCharacterId = data.active_character_id;
+
+    const charsRes = await fetch("/api/characters");
+    const charsData = await charsRes.json();
+    populateCharacterSelect(charsData.characters, charsData.active_character_id);
+
     if (data.logged_in) {
       el.textContent = "● LOGGED IN";
       el.className = "logged-in";
-      loginBtn.textContent = "Logout";
+      logoutBtn.disabled = false;
       setRefreshButtonsEnabled(true);
       // Paint instantly from cache if there is one (no blank screen while
       // waiting), but ALWAYS follow it with a real fetch — a cache hit
@@ -2175,14 +2227,14 @@ async function refreshStatus(isRetry) {
       // loadDashboard() layers its "refreshing" pulse on top of the
       // cached content rather than blanking it, so this doesn't
       // reintroduce the old spinner-on-every-load wait.
-      loadDashboardCache();
+      loadDashboardCache(activeCharacterId);
       loadDashboard();
     } else {
       el.textContent = "● NOT LOGGED IN";
       el.className = "";
-      loginBtn.textContent = "Login via EVE SSO";
+      logoutBtn.disabled = true;
       setRefreshButtonsEnabled(false);
-      showBanner('Not logged in — click "Login via EVE SSO" to load your dashboard.', false);
+      showBanner('Not logged in — choose "+ Add character…" to load your dashboard.', false);
     }
   } catch (e) {
     if (!isRetry) {
@@ -2193,31 +2245,60 @@ async function refreshStatus(isRetry) {
   }
 }
 
-document.getElementById("login-btn").addEventListener("click", async () => {
+async function addCharacter() {
   const el = document.getElementById("login-status");
-  if (isLoggedIn) {
-    el.textContent = "● LOGGING OUT…";
-    el.className = "logging-in";
-    try {
-      await fetch("/api/logout", { method: "POST" });
-    } catch (e) {
-      showBanner(`Logout request failed: ${e}`, true);
-    }
-    document.getElementById("content").className = "";
-    clearDashboardCache();
-    refreshStatus();
-    return;
-  }
   el.textContent = "● LOGGING IN…";
   el.className = "logging-in";
   showBanner("Opening browser for EVE SSO login...", false);
   try {
-    const res = await fetch("/api/login", { method: "POST" });
+    const res = await fetch("/api/characters/add", { method: "POST" });
     const data = await res.json();
     if (data.error) { showBanner(data.error, true); }
   } catch (e) {
     showBanner(`Login request failed: ${e}`, true);
   }
+  refreshStatus();
+}
+
+document.getElementById("character-select").addEventListener("change", async e => {
+  const value = e.target.value;
+  if (value === "__add__") {
+    await addCharacter();
+    return;
+  }
+  const characterId = parseInt(value, 10);
+  if (characterId === activeCharacterId) return;
+  document.getElementById("content").className = "";
+  showBanner("Switching character…", false);
+  try {
+    const res = await fetch("/api/characters/switch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ character_id: characterId }),
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      showBanner(data.error || "Couldn't switch character.", true);
+      return;
+    }
+    hideBanner();
+    refreshStatus();
+  } catch (err) {
+    showBanner(`Switch request failed: ${err}`, true);
+  }
+});
+
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  const el = document.getElementById("login-status");
+  el.textContent = "● LOGGING OUT…";
+  el.className = "logging-in";
+  try {
+    await fetch("/api/logout", { method: "POST" });
+  } catch (e) {
+    showBanner(`Logout request failed: ${e}`, true);
+  }
+  if (activeCharacterId) clearDashboardCache(activeCharacterId);
+  document.getElementById("content").className = "";
   refreshStatus();
 });
 
