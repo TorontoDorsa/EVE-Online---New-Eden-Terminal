@@ -1,0 +1,1306 @@
+#!/usr/bin/env python3
+"""
+Character dashboard
+----------------------
+A single combined view of the logged-in character's current state and
+plans: wallet, location, ship, skills, skill queue + mining skill
+gaps, assets & blueprints, active industry jobs, and recent mining
+throughput / ISK-per-hour.
+
+Requires (beyond the base scopes): esi-location.read_ship_type.v1 and
+esi-assets.read_assets.v1 — re-run `python eve_sso_auth.py login` if
+your saved token predates these. Called via:
+    python eve_esi_terminal.py dashboard [--mining-days 7] [--hours-per-day 3]
+"""
+
+import sys
+import re
+import base64
+import datetime
+from concurrent.futures import ThreadPoolExecutor
+
+import requests
+
+import eve_esi_terminal as esi
+import eve_sso_auth as auth
+import skill_plan
+import mining_report as mr
+import zkillboard
+import corp_overview
+import ship_data
+
+SECTION = "-" * 60
+
+SCOPE_HINTS = {
+    "wallet": "esi-wallet.read_character_wallet.v1",
+    "location": "esi-location.read_location.v1",
+    "ship": "esi-location.read_ship_type.v1",
+    "skills": "esi-skills.read_skills.v1",
+    "skillqueue": "esi-skills.read_skillqueue.v1",
+    "assets": "esi-assets.read_assets.v1",
+    "blueprints": "esi-characters.read_blueprints.v1",
+    "active_jobs": "esi-industry.read_character_jobs.v1",
+    "mining": "esi-industry.read_character_mining.v1",
+}
+
+
+def _classify_exception(e, section_key):
+    """Turns an exception raised while fetching a scoped section into the
+    same {"available": False, "reason", "fixable_by_login"} shape used
+    throughout — shared by _scoped() (direct call) and _scoped_result()
+    (already-submitted Future), so a single missing permission only takes
+    out the one section that needs it, not every tab."""
+    if isinstance(e, requests.HTTPError):
+        code = e.response.status_code if e.response is not None else None
+        if code == 401:
+            scope = SCOPE_HINTS.get(section_key, "the required scope")
+            if scope in auth.DEFAULT_SCOPES:
+                reason = f"This needs the {scope} permission, which isn't authorized on this login — click below to log in again and grant it."
+                fixable = True
+            else:
+                reason = (
+                    f"This needs the {scope} permission, which this app doesn't currently request "
+                    f"during login — logging in again won't grant it; the app itself needs to be "
+                    f"updated to ask for that scope first."
+                )
+                fixable = False
+        elif code == 403:
+            reason = (
+                "Your character doesn't have the access/role needed for this data — logging in "
+                "again won't help, since this depends on your character's in-game permissions, "
+                "not the login itself."
+            )
+            fixable = False
+        else:
+            reason = f"ESI returned HTTP {code}."
+            fixable = False
+        return {"available": False, "reason": reason, "fixable_by_login": fixable}
+    return {"available": False, "reason": f"ESI request failed: {e}", "fixable_by_login": False}
+
+
+def _scoped(fetch_fn, section_key, default):
+    """Runs fetch_fn() and returns (result, permission) — see
+    _classify_exception() for what happens on a 401/403/other failure."""
+    try:
+        return fetch_fn(), {"available": True, "reason": None, "fixable_by_login": False}
+    except requests.RequestException as e:
+        return default, _classify_exception(e, section_key)
+
+
+def _scoped_result(future, section_key, default):
+    """Same contract as _scoped(), but resolves an already-submitted
+    concurrent.futures.Future instead of calling fetch_fn() directly —
+    lets get_dashboard_data() submit every independent ESI-backed section
+    to a thread pool up front, so the sections only wait on each other
+    when they actually have to, instead of paying for the full sum of
+    every section's latency in sequence."""
+    try:
+        return future.result(), {"available": True, "reason": None, "fixable_by_login": False}
+    except requests.RequestException as e:
+        return default, _classify_exception(e, section_key)
+
+
+def _header(title):
+    print(f"\n{SECTION}\n{title}\n{SECTION}")
+
+
+_HULL_STAT_ATTRS = {
+    "shield_capacity": 263, "armor_hp": 265, "shield_recharge_ms": 479,
+    # verified live against real ESI dogma_attributes (see project memory) —
+    # generalMiningHoldCapacity, turretSlotsLeft, launcherSlotsLeft.
+    "ore_hold_capacity": 1556, "turret_hardpoints": 102, "launcher_hardpoints": 101,
+}
+
+
+def get_ship_data():
+    char_id = auth.get_character_id()
+    ship = esi._auth_get(f"/characters/{char_id}/ship/", datasource="tranquility")
+    type_id = ship["ship_type_id"]
+    type_data = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
+    by_attr = {a["attribute_id"]: a["value"] for a in type_data.get("dogma_attributes", [])}
+    hull_stats = {
+        key: by_attr.get(attr_id)
+        for key, attr_id in _HULL_STAT_ATTRS.items()
+    }
+    return {
+        "type_id": type_id,
+        "type_name": esi.resolve_type_name(type_id),
+        "ship_name": ship.get("ship_name", "unnamed"),
+        "hull_stats": hull_stats,
+    }
+
+
+def get_portrait_data_uri(char_id):
+    """Character portrait as an inline data: URI, for a self-contained
+    dashboard header. Decorative only — any failure here shouldn't break
+    the rest of the dashboard, so this degrades to "" rather than raising."""
+    try:
+        portrait = esi.get(f"/characters/{char_id}/portrait/", datasource="tranquility")
+        url = portrait.get("px256x256") or portrait.get("px128x128") or portrait.get("px512x512")
+        if not url:
+            return ""
+        img = requests.get(url, timeout=15)
+        img.raise_for_status()
+        ctype = img.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
+        b64 = base64.b64encode(img.content).decode("ascii")
+        return f"data:{ctype};base64,{b64}"
+    except requests.RequestException:
+        return ""
+
+
+def get_corporation_data():
+    """Public endpoint — no auth needed beyond knowing the character's corp_id."""
+    char_id = auth.get_character_id()
+    corp_id = esi.get_corporation_id(char_id)
+    corp = esi.get(f"/corporations/{corp_id}/", datasource="tranquility")
+    return {"id": corp_id, "name": corp["name"], "ticker": corp["ticker"]}
+
+
+def _ship():
+    ship = get_ship_data()
+    print(f"  Current ship : {ship['type_name']} ({ship['ship_name']})")
+
+
+def get_assets_data(top_n=8):
+    char_id = auth.get_character_id()
+    assets = esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
+    if not assets:
+        return {"total_items": 0, "distinct_locations": 0, "top_items": []}
+
+    locations = {a["location_id"] for a in assets}
+    counts = {}
+    for a in assets:
+        counts[a["type_id"]] = counts.get(a["type_id"], 0) + a.get("quantity", 1)
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:top_n]
+    return {
+        "total_items": len(assets),
+        "distinct_locations": len(locations),
+        "top_items": [{"name": esi.resolve_type_name(tid), "quantity": qty} for tid, qty in top],
+    }
+
+
+def _assets_summary():
+    data = get_assets_data()
+    if not data["top_items"] and data["total_items"] == 0:
+        print("  No assets found.")
+        return
+    print(f"  Total items         : {data['total_items']:,}")
+    print(f"  Distinct locations  : {data['distinct_locations']}")
+    print("  Top item types:")
+    for item in data["top_items"]:
+        print(f"    {item['name']:<28} x{item['quantity']:,}")
+
+
+def get_active_jobs_data():
+    char_id = auth.get_character_id()
+    jobs = esi._auth_get(f"/characters/{char_id}/industry/jobs/", datasource="tranquility")
+    active = [j for j in jobs if j["status"] == "active"]
+    prices = mr.get_prices()
+    result = []
+    for j in active:
+        type_id = j.get("product_type_id") or j["blueprint_type_id"]
+        result.append({
+            "product": esi.resolve_type_name(type_id),
+            "activity_id": j["activity_id"],
+            "end_date": j["end_date"],
+            "avg_sell_price": prices.get(type_id),
+        })
+    return result
+
+
+def _active_jobs():
+    active = get_active_jobs_data()
+    if not active:
+        print("  No active industry jobs.")
+        return
+    for j in active:
+        price = f"{j['avg_sell_price']:,.2f} ISK" if j["avg_sell_price"] else "n/a"
+        print(f"  {j['product']:<28} activity {j['activity_id']}  ends {j['end_date']}  avg sell {price}")
+
+
+_WALLET_ACTIVITY_REF_TYPES = {
+    "mission": ("agent_mission_reward", "agent_mission_time_bonus_reward"),
+    "bounty": ("bounty_prizes",),
+    "industry": ("industry_job_tax", "manufacturing", "researching_time_productivity",
+                 "researching_material_productivity", "reprocessing_tax"),
+}
+
+
+def get_net_isk_data(days):
+    """Net ISK (earned minus spent) from the wallet journal over the last N
+    days, plus a real ref_type breakdown (mission rewards, NPC bounty
+    prizes, industry-related entries — verified live against this
+    character's real journal) used by _build_character_profile() to
+    ground theme detection/tip personalization in real financial
+    activity, not just skill training ratios."""
+    char_id = auth.get_character_id()
+    entries = mr._paged_get(f"/characters/{char_id}/wallet/journal/")
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=days)).isoformat()
+    recent = [e for e in entries if e.get("date", "") >= cutoff]
+
+    earned = sum(e["amount"] for e in recent if e["amount"] > 0)
+    spent = sum(-e["amount"] for e in recent if e["amount"] < 0)
+
+    by_ref_type = {}
+    for label, ref_types in _WALLET_ACTIVITY_REF_TYPES.items():
+        matching = [e for e in recent if e.get("ref_type") in ref_types]
+        by_ref_type[label] = {"count": len(matching), "isk": sum(e["amount"] for e in matching)}
+
+    return {
+        "window_days": days,
+        "net_isk": earned - spent,
+        "earned": earned,
+        "spent": spent,
+        "by_ref_type": by_ref_type,
+    }
+
+
+_TYPE_GROUP_CACHE = {}
+_GROUP_INFO_CACHE = {}
+
+
+def _categorize_mining_type(type_id):
+    """Ore vs Ice vs Gas vs Other, verified against real ESI category/group
+    data rather than guessed from names: ore and ice both sit under
+    category_id 25 (Asteroid) — ice is specifically group "Ice", everything
+    else in that category is ore (including moon-ore variants). Gas sits
+    under category_id 2, group "Harvestable Cloud"."""
+    if type_id not in _TYPE_GROUP_CACHE:
+        t = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
+        _TYPE_GROUP_CACHE[type_id] = t["group_id"]
+    group_id = _TYPE_GROUP_CACHE[type_id]
+
+    if group_id not in _GROUP_INFO_CACHE:
+        g = esi.get(f"/universe/groups/{group_id}/", datasource="tranquility")
+        _GROUP_INFO_CACHE[group_id] = (g["category_id"], g["name"])
+    category_id, group_name = _GROUP_INFO_CACHE[group_id]
+
+    if category_id == 2 and group_name == "Harvestable Cloud":
+        return "Gas"
+    if category_id == 25 and group_name == "Ice":
+        return "Ice"
+    if category_id == 25:
+        return "Ore"
+    return "Other"
+
+
+def get_mining_breakdown_data(days):
+    """Mined quantity/value over the window, bucketed into Ore/Ice/Gas/Other
+    and broken out per resource type within each."""
+    char_id = auth.get_character_id()
+    entries = esi._auth_get(f"/characters/{char_id}/mining/", datasource="tranquility")
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    entries = [e for e in entries if e["date"] >= cutoff]
+
+    category_totals = {"Ore": 0.0, "Ice": 0.0, "Gas": 0.0, "Other": 0.0}
+    if not entries:
+        return {"window_days": days, "category_totals": category_totals, "by_type": []}
+
+    prices = mr.get_prices()
+    agg = {}
+    for e in entries:
+        tid = e["type_id"]
+        row = agg.setdefault(tid, {"quantity": 0, "isk_value": 0.0})
+        row["quantity"] += e["quantity"]
+        row["isk_value"] += e["quantity"] * prices.get(tid, 0)
+
+    rows = []
+    for tid, data in agg.items():
+        category = _categorize_mining_type(tid)
+        rows.append({
+            "type_id": tid,
+            "name": esi.resolve_type_name(tid),
+            "category": category,
+            "quantity": data["quantity"],
+            "isk_value": data["isk_value"],
+        })
+        category_totals[category] += data["isk_value"]
+
+    rows.sort(key=lambda r: -r["isk_value"])
+
+    return {
+        "window_days": days,
+        "category_totals": category_totals,
+        "by_type": rows,
+    }
+
+
+def get_jita_resource_prices(type_ids):
+    """Live Jita (The Forge) buy/sell order-book prices for a set of
+    resource types, as of right now — distinct from the server-wide
+    average used elsewhere on this dashboard. One order-book call per
+    type; ESI has no bulk multi-type endpoint for this."""
+    region_id = esi.REGIONS["the forge"]
+    rows = []
+    for tid in type_ids:
+        orders = esi.get(f"/markets/{region_id}/orders/", datasource="tranquility",
+                          order_type="all", type_id=tid)
+        buys = [o["price"] for o in orders if o["is_buy_order"]]
+        sells = [o["price"] for o in orders if not o["is_buy_order"]]
+        rows.append({
+            "type_id": tid,
+            "name": esi.resolve_type_name(tid),
+            "jita_buy": max(buys) if buys else None,
+            "jita_sell": min(sells) if sells else None,
+        })
+    rows.sort(key=lambda r: -(r["jita_sell"] or 0))
+    return rows
+
+
+_REGION_NAME_CACHE = {}
+
+
+def _resolve_region_name(region_id):
+    if region_id not in _REGION_NAME_CACHE:
+        try:
+            data = esi.get(f"/universe/regions/{region_id}/", datasource="tranquility")
+            _REGION_NAME_CACHE[region_id] = data["name"]
+        except requests.RequestException:
+            _REGION_NAME_CACHE[region_id] = f"region_id {region_id}"
+    return _REGION_NAME_CACHE[region_id]
+
+
+def get_market_order_tips(char_id, limit=3):
+    """Tips about the character's own open market orders, comparing each
+    order's price against the current live order book for that item in
+    the SAME region the order is actually sitting in (regional prices
+    vary a lot — comparing against a different region, e.g. always Jita,
+    would be misleading). Uses esi-markets.read_character_orders.v1 —
+    granted but otherwise unused elsewhere on this dashboard. A sell order
+    priced above the current lowest ask is being undercut and won't move;
+    a buy order priced below the current highest bid isn't competitive
+    either. ESI omits `is_buy_order` entirely for sell orders (false is
+    the omitted default), so it's read with a default rather than indexed
+    directly. Ranked by ISK at stake (price x remaining volume) so the
+    costliest issue surfaces first. Each tip is a {"text", "why"} dict —
+    `why` carries the exact price comparison plus the region name. Never
+    returns an empty list.
+
+    Returns (tips, stats) — `stats` = {"order_count", "undercut_count",
+    "isk_at_stake"} (across ALL non-competitive orders, not just the ones
+    that made the `limit` cut) so callers like _industry_context() can
+    ground Broker-Relations-family skill tips in the real order book
+    without re-fetching it.
+    """
+    empty_stats = {"order_count": 0, "undercut_count": 0, "isk_at_stake": 0}
+    try:
+        orders = esi._auth_get(f"/characters/{char_id}/orders/", datasource="tranquility")
+    except requests.RequestException:
+        return [{"text": "Couldn't load your open market orders right now.", "why": "The ESI request for open orders failed."}], empty_stats
+
+    if not orders:
+        return [{"text": "You have no open market orders.", "why": "/characters/{id}/orders/ returned an empty list for this character."}], empty_stats
+
+    book_cache = {}
+    flagged = []
+    competitive_count = 0
+    for o in orders:
+        region_id, type_id = o["region_id"], o["type_id"]
+        key = (region_id, type_id)
+        if key not in book_cache:
+            book_orders = esi.get(f"/markets/{region_id}/orders/", datasource="tranquility",
+                                   order_type="all", type_id=type_id)
+            buys = [ob["price"] for ob in book_orders if ob.get("is_buy_order", False)]
+            sells = [ob["price"] for ob in book_orders if not ob.get("is_buy_order", False)]
+            book_cache[key] = {"buy": max(buys) if buys else None, "sell": min(sells) if sells else None}
+        book = book_cache[key]
+
+        isk_at_stake = o["price"] * o["volume_remain"]
+        name = esi.resolve_type_name(type_id)
+        region_name = _resolve_region_name(region_id)
+        if o.get("is_buy_order", False):
+            best = book["buy"]
+            if best and o["price"] < best:
+                flagged.append((isk_at_stake, {
+                    "text": (
+                        f"Your buy order for {name} ({o['price']:,.2f} ISK) is below the current "
+                        f"top bid ({best:,.2f} ISK) — it won't fill until raised."
+                    ),
+                    "why": (
+                        f"In {region_name}, the current highest buy order for {name} is {best:,.2f} ISK, "
+                        f"above your {o['price']:,.2f} ISK. Sellers accept the highest-priced buy order "
+                        f"first, so a lower buy order sits unfilled until it's raised or the competing "
+                        f"order expires. {o['volume_remain']:,} units remain on this order "
+                        f"({isk_at_stake:,.2f} ISK at stake)."
+                    ),
+                }))
+            else:
+                competitive_count += 1
+        else:
+            best = book["sell"]
+            if best and o["price"] > best:
+                flagged.append((isk_at_stake, {
+                    "text": (
+                        f"Your sell order for {name} ({o['price']:,.2f} ISK) is above the current "
+                        f"lowest ask ({best:,.2f} ISK) — it's being undercut."
+                    ),
+                    "why": (
+                        f"In {region_name}, the current lowest sell order for {name} is {best:,.2f} ISK, "
+                        f"below your {o['price']:,.2f} ISK. Buyers pick the cheapest available sell order "
+                        f"first, so a higher-priced order sits unsold until it's undercut-matched or the "
+                        f"competing order expires. {o['volume_remain']:,} units remain on this order "
+                        f"({isk_at_stake:,.2f} ISK at stake)."
+                    ),
+                }))
+            else:
+                competitive_count += 1
+
+    flagged.sort(key=lambda f: -f[0])
+    tips = [tip for _, tip in flagged[:limit]]
+    stats = {
+        "order_count": len(orders),
+        "undercut_count": len(flagged),
+        "isk_at_stake": sum(isk for isk, _ in flagged),
+    }
+
+    if not tips:
+        tips.append({
+            "text": f"All {len(orders)} of your open market order(s) are currently competitive.",
+            "why": "Each open order's price is at or better than the best competing order in its own region, so none are currently being undercut or outbid.",
+        })
+
+    return tips, stats
+
+
+def get_mining_throughput_data(days, hours_per_day):
+    char_id = auth.get_character_id()
+    entries = esi._auth_get(f"/characters/{char_id}/mining/", datasource="tranquility")
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    entries = [e for e in entries if e["date"] >= cutoff]
+    if not entries:
+        return {"window_days": days, "active_days": 0, "total_isk": 0, "isk_per_active_day": 0,
+                "isk_per_hour": None, "hours_per_day": hours_per_day, "daily": []}
+
+    prices = mr.get_prices()
+    daily_isk = {}
+    for e in entries:
+        isk = e["quantity"] * prices.get(e["type_id"], 0)
+        daily_isk[e["date"]] = daily_isk.get(e["date"], 0) + isk
+
+    total_isk = sum(daily_isk.values())
+    active_days = len(daily_isk)
+    isk_per_hour = (total_isk / (active_days * hours_per_day)) if hours_per_day else None
+
+    return {
+        "window_days": days,
+        "active_days": active_days,
+        "total_isk": total_isk,
+        "isk_per_active_day": total_isk / active_days,
+        "isk_per_hour": isk_per_hour,
+        "hours_per_day": hours_per_day,
+        "daily": [{"date": d, "isk": isk} for d, isk in sorted(daily_isk.items())],
+    }
+
+
+def get_sales_throughput_data(days, hours_per_day):
+    """ISK actually received from market sell transactions — real transaction
+    prices, not an estimate (unlike mining, which prices ore at market average
+    since raw ore itself isn't what gets sold)."""
+    char_id = auth.get_character_id()
+    transactions = esi._auth_get(f"/characters/{char_id}/wallet/transactions/", datasource="tranquility")
+    cutoff = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    sells = [t for t in transactions if not t["is_buy"] and t["date"][:10] >= cutoff]
+    if not sells:
+        return {"window_days": days, "active_days": 0, "total_isk": 0, "isk_per_active_day": 0,
+                "isk_per_hour": None, "hours_per_day": hours_per_day, "daily": []}
+
+    daily_isk = {}
+    for t in sells:
+        date = t["date"][:10]
+        isk = t["quantity"] * t["unit_price"]
+        daily_isk[date] = daily_isk.get(date, 0) + isk
+
+    total_isk = sum(daily_isk.values())
+    active_days = len(daily_isk)
+    isk_per_hour = (total_isk / (active_days * hours_per_day)) if hours_per_day else None
+
+    return {
+        "window_days": days,
+        "active_days": active_days,
+        "total_isk": total_isk,
+        "isk_per_active_day": total_isk / active_days,
+        "isk_per_hour": isk_per_hour,
+        "hours_per_day": hours_per_day,
+        "daily": [{"date": d, "isk": isk} for d, isk in sorted(daily_isk.items())],
+    }
+
+
+def _mining_throughput(days, hours_per_day):
+    data = get_mining_throughput_data(days, hours_per_day)
+    if not data["daily"]:
+        print(f"  No mining ledger entries in the last {days} days.")
+        return
+
+    print(f"  Window            : last {days} days")
+    print(f"  Active days       : {data['active_days']}")
+    print(f"  Total mined value : {data['total_isk']:,.0f} ISK")
+    print(f"  ISK / active day  : {data['isk_per_active_day']:,.0f} ISK")
+    if data["isk_per_hour"] is not None:
+        print(f"  ISK / hour (est, assuming {hours_per_day}h per active day): {data['isk_per_hour']:,.0f} ISK")
+    else:
+        print("  ESI doesn't track session length, so ISK/hour needs an assumption —")
+        print("  pass --hours-per-day to estimate it.")
+
+
+OMEGA_PLEX_COST = 500  # CCP's fixed rate: 500 PLEX = 30 days of Omega
+
+
+def get_plex_data(vault_plex_owned=0):
+    """Current PLEX price, plus the ISK cost of 1 month of Omega.
+
+    PLEX no longer trades through the regular regional order book (CCP moved
+    it to a separate per-region vault system years ago), so the region
+    orders endpoint returns nothing for it. ESI's /markets/prices/ endpoint
+    still tracks a live average_price for it — but that figure is a
+    server-wide average, not a Jita-specific order-book price, since ESI
+    doesn't expose the regional PLEX vaults publicly.
+
+    Separately: PLEX you actually own normally sits in the account-wide
+    PLEX Vault, which has NO ESI endpoint at all (confirmed via CCP's own
+    support docs — it's deliberately excluded, account-level, not
+    per-character). The only PLEX ESI can see is loose PLEX sitting as a
+    plain tradeable asset outside the vault. So vault_plex_owned must be
+    supplied manually — there's no way to fetch it.
+    """
+    resolved = esi.resolve_ids(["PLEX"])
+    matches = resolved.get("inventory_types", [])
+    if not matches:
+        return {"available": False}
+    type_id = matches[0]["id"]
+
+    prices = mr.get_prices()
+    avg_price = prices.get(type_id)
+
+    char_id = auth.get_character_id()
+    assets = esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
+    loose_owned_qty = sum(a.get("quantity", 0) for a in assets if a["type_id"] == type_id)
+    owned_qty = loose_owned_qty + vault_plex_owned
+
+    plex_needed = max(0, OMEGA_PLEX_COST - owned_qty)
+
+    return {
+        "available": avg_price is not None,
+        "loose_owned_qty": loose_owned_qty,
+        "vault_plex_owned": vault_plex_owned,
+        "avg_price": avg_price,
+        "omega_plex_cost": OMEGA_PLEX_COST,
+        "omega_isk_cost": avg_price * OMEGA_PLEX_COST if avg_price else None,
+        "owned_qty": owned_qty,
+        "owned_value_isk": owned_qty * avg_price if avg_price else None,
+        "plex_needed": plex_needed,
+        "purchase_cost_isk": plex_needed * avg_price if avg_price else None,
+    }
+
+
+def get_corp_tips(corp_overview_data):
+    """A handful of factual observations about the character's corp — not
+    skill-based, so it doesn't fit rank_skill_tips(). Deliberately plain
+    facts rather than computed ISK figures: guessing which of the
+    character's income streams are actually subject to corp tax (bounty
+    and other NPC-derived income, not mining or market sales) risks
+    stating something mechanically wrong about how the tax applies."""
+    tips = []
+    membership = corp_overview_data.get("membership") or {}
+    tax_rate = membership.get("tax_rate")
+    if tax_rate is not None:
+        if tax_rate == 0:
+            tips.append({
+                "text": "Your corp's tax rate is 0% — no cut is taken from bounty or other NPC-derived income.",
+                "why": "ESI's tax_rate field is a fraction taken from bounty and other NPC-derived income specifically — it does not apply to mining yield or player-to-player market sales.",
+            })
+        else:
+            tips.append({
+                "text": (
+                    f"Your corp's tax rate is {tax_rate * 100:.0f}% — this applies to bounty and "
+                    f"other NPC-derived income, not to mining yield or market sales directly."
+                ),
+                "why": "ESI's tax_rate field only describes the cut taken from bounty and other NPC-derived income — mining and market sales are unaffected by this figure, so it isn't safe to apply it to those ISK totals.",
+            })
+
+    wars = corp_overview_data.get("wars") or {}
+    if wars.get("war_eligible"):
+        tips.append({
+            "text": "Your corp is currently war-eligible — worth keeping an eye on zKillboard for hostile activity.",
+            "why": "War eligibility (ESI's war_eligible flag) means another corp or alliance could file a formal wardec against yours, opening mutual PVP outside normal security-status restrictions.",
+        })
+    else:
+        tips.append({
+            "text": "Your corp isn't currently war-eligible, so a formal wardec against it isn't a live risk right now.",
+            "why": "ESI's war_eligible flag is false — a corp typically becomes war-eligible once it holds structures or meets other CONCORD criteria, none of which currently apply here.",
+        })
+
+    home = corp_overview_data.get("home") or {}
+    if home.get("available"):
+        tips.append({
+            "text": f"Corp home base is {home.get('name')} in {home.get('system_name')}.",
+            "why": "This is the corp's registered home station/structure as reported by ESI's corporation info endpoint.",
+        })
+
+    structures = corp_overview_data.get("structures") or {}
+    if not structures.get("available"):
+        tips.append({
+            "text": (
+                "Structure fuel status isn't visible without Director-level corp roles — "
+                "ask a director to check the fuel bunkers directly if that matters to you."
+            ),
+            "why": "ESI's corporation structures endpoint (esi-corporations.read_structures.v1) only returns data for characters holding a Director role in the corp — this character doesn't currently have one, so the app can't fetch it on your behalf.",
+        })
+
+    return tips or [{"text": "No corp data available to build tips from.", "why": "The corp overview fetch returned no usable data."}]
+
+
+_PVP_ACTIVITY_WINDOW_DAYS = 90
+
+
+def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats):
+    """Cross-category signals computed once per dashboard load and reused
+    by every tip category's context-builder below — blends each
+    category's real skill-training completion ratio with real behavioral
+    confirmation (mined ISK, active/historical industry activity,
+    mission/bounty ISK from the wallet journal, zKillboard activity), so
+    tips can weigh multiple real factors together ("what is this
+    character actually built for") instead of skill investment alone.
+    Every input here is already fetched elsewhere in get_dashboard_data()
+    — this is pure computation, no new ESI calls except the by_ref_type
+    breakdown already added to get_net_isk_data()."""
+    theme = {}
+    for category, rows in skill_plans.items():
+        core_rows = [r for r in rows if r.get("is_core") and r.get("target")]
+        skill_ratio = (
+            sum(min(r["trained"], r["target"]) / r["target"] for r in core_rows) / len(core_rows)
+            if core_rows else 0.0
+        )
+        theme[category] = {"skill_ratio": skill_ratio, "confirmed_by_activity": False}
+
+    mining_totals = mining_breakdown.get("category_totals") or {}
+    if sum(mining_totals.values()) > 0 and "Mining" in theme:
+        theme["Mining"]["confirmed_by_activity"] = True
+
+    by_ref_type = net_isk.get("by_ref_type") or {}
+    mission_isk = by_ref_type.get("mission", {}).get("isk", 0)
+    bounty_isk = by_ref_type.get("bounty", {}).get("isk", 0)
+    industry_journal_isk = by_ref_type.get("industry", {}).get("isk", 0)
+    if (mission_isk > 0 or bounty_isk > 0) and "Mission Running" in theme:
+        theme["Mission Running"]["confirmed_by_activity"] = True
+
+    active_manufacturing = [j for j in active_jobs if j.get("activity_id") == 1]
+    active_research = [j for j in active_jobs if j.get("activity_id") in (3, 4, 5, 8)]
+    if (active_manufacturing or active_research or industry_journal_isk) and "Industry" in theme:
+        theme["Industry"]["confirmed_by_activity"] = True
+
+    cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=_PVP_ACTIVITY_WINDOW_DAYS)).isoformat()
+    recent_kills = [k for k in (zkill.get("kills") or []) if k.get("date", "") >= cutoff]
+    recent_losses = [l for l in (zkill.get("losses") or []) if l.get("date", "") >= cutoff]
+    if (recent_kills or recent_losses) and "PVP" in theme:
+        theme["PVP"]["confirmed_by_activity"] = True
+
+    dominant_category = max(theme, key=lambda c: theme[c]["skill_ratio"]) if theme else None
+
+    return {
+        "theme": theme,
+        "dominant_category": dominant_category,
+        "mining_activity": {
+            "totals": mining_totals, "by_type": mining_breakdown.get("by_type", []),
+            "window_days": mining_breakdown.get("window_days"),
+        },
+        "industry_activity": {
+            "active_manufacturing": active_manufacturing, "active_research": active_research,
+            "journal_isk": industry_journal_isk,
+        },
+        "mission_activity": {
+            "mission_isk": mission_isk, "mission_count": by_ref_type.get("mission", {}).get("count", 0),
+            "bounty_isk": bounty_isk, "bounty_count": by_ref_type.get("bounty", {}).get("count", 0),
+        },
+        "pvp_activity": {"kills": recent_kills, "losses": recent_losses, "window_days": _PVP_ACTIVITY_WINDOW_DAYS},
+        "ship_stats": ship.get("hull_stats") or {},
+        "market_activity": market_stats,
+    }
+
+
+# Which real ore types each Ore Processing skill boosts — copied verbatim
+# from each skill's own real ESI description (verified live, not guessed;
+# see the item-requirement sweep of the "Mining Crystal" group that found
+# these 9 skills gate real mining-crystal tiers). Static because these
+# descriptions don't change; re-verify against ESI if CCP ever adds an
+# ore type.
+_ORE_PROCESSING_ORE_TYPES = {
+    "Simple Ore Processing": {"Plagioclase", "Pyroxeres", "Scordite", "Veldspar", "Mordunium"},
+    "Coherent Ore Processing": {"Hedbergite", "Hemorphite", "Jaspet", "Kernite", "Omber", "Ytirium", "Griemeer", "Nocxite"},
+    "Complex Ore Processing": {"Arkonor", "Bistot", "Spodumain", "Eifyrium", "Ducinium", "Hezorime", "Ueganite"},
+    "Variegated Ore Processing": {"Crokite", "Dark Ochre", "Gneiss", "Kylixium"},
+    "Erratic Ore Processing": {"Prismaticite"},
+    "Abyssal Ore Processing": {"Bezdnacine", "Rakovene", "Talassonite"},
+    "Ubiquitous Moon Ore Processing": {"Zeolites", "Sylvite", "Bitumens", "Coesite"},
+    "Common Moon Ore Processing": {"Cobaltite", "Euxenite", "Titanite", "Scheelite"},
+    "Uncommon Moon Ore Processing": {"Otavite", "Sperrylite", "Vanadinite", "Chromite"},
+    "Rare Moon Ore Processing": {"Carnotite", "Zircon", "Pollucite", "Cinnabar"},
+    "Exceptional Moon Ore Processing": {"Xenotime", "Monazite", "Loparite", "Ytterbite"},
+}
+
+_ORE_GRADE_SUFFIX_RE = re.compile(r"\s+[IVX]+-Grade$")
+
+
+def _base_ore_name(name):
+    """Real mined-ore rows include compressed/refined grade variants (e.g.
+    "Veldspar II-Grade") that share their base ore's processing skill —
+    strip the suffix so relevance-matching works against the plain name."""
+    return _ORE_GRADE_SUFFIX_RE.sub("", name)
+
+
+def _mining_context(profile):
+    """Real activity-driven scoring context for Mining skill tips — a
+    skill's ranking factor now reflects whether the character actually
+    mines the resource it boosts (up to +0.5), not just its raw %/level
+    bonus. Ice Harvesting/Gas Cloud Harvesting map cleanly onto the real
+    Ice/Gas category totals. Deep Core Mining's Mercoxit-specific benefit
+    can't be checked reliably — ESI exposes no flag for which ore variant
+    triggers that mechanic — so it gets an honest "can't verify" note
+    instead of a guessed yes/no, plus real overall ore context. Ore
+    Processing skills (gate real mining-crystal items — see
+    _ORE_PROCESSING_ORE_TYPES above) get relevance from the character's
+    actual mined ore-type mix, not just an aggregate Ore total."""
+    days = profile["mining_activity"]["window_days"]
+    totals = profile["mining_activity"]["totals"]
+    ore_isk = totals.get("Ore", 0) or 0
+    ice_isk = totals.get("Ice", 0) or 0
+    gas_isk = totals.get("Gas", 0) or 0
+
+    def relevance(isk):
+        return min(0.5, isk / 20_000_000) if isk > 0 else 0.0
+
+    def entry(isk, label):
+        why = (
+            f"You've mined {isk:,.0f} ISK of {label} in the last {days} days — this bonus applies directly to that."
+            if isk > 0 else
+            f"You haven't mined any {label} in the last {days} days, so this bonus wouldn't currently affect your regular runs."
+        )
+        return {"factor": 1.0 + relevance(isk), "why": why}
+
+    context = {
+        "Ice Harvesting": entry(ice_isk, "Ice"),
+        "Gas Cloud Harvesting": entry(gas_isk, "Gas"),
+        "Deep Core Mining": {
+            "factor": 1.0 + relevance(ore_isk),
+            "why": (
+                "This specifically reduces risk while mining Mercoxit — there's no reliable way to "
+                "check that against your mining history, since ESI doesn't expose which ore variant "
+                f"triggers it. For context, you've mined {ore_isk:,.0f} ISK of ore overall in the last {days} days."
+            ),
+        },
+    }
+    general = entry(ore_isk, "ore")
+    for name in ("Mining", "Astrogeology", "Mining Upgrades", "Mining Frigate", "Mining Barge", "Exhumers"):
+        context[name] = general
+
+    by_type = profile["mining_activity"]["by_type"]
+    for skill_name, ore_types in _ORE_PROCESSING_ORE_TYPES.items():
+        matched = [r for r in by_type if _base_ore_name(r["name"]) in ore_types]
+        matched_isk = sum(r["isk_value"] for r in matched)
+        if matched:
+            matched_names = ", ".join(sorted({_base_ore_name(r["name"]) for r in matched}))
+            why = (
+                f"This gates the mining crystals for the ore types it boosts — you've mined "
+                f"{matched_isk:,.0f} ISK of {matched_names} in the last {days} days, so this applies "
+                f"directly there."
+            )
+        else:
+            why = (
+                f"This gates the mining crystals for a specific ore family "
+                f"({', '.join(sorted(ore_types))}) — you haven't mined any of those in the last "
+                f"{days} days, so it wouldn't help your regular runs right now."
+            )
+        context[skill_name] = {"factor": 1.0 + relevance(matched_isk), "why": why}
+
+    return context
+
+
+def _industry_context(profile):
+    """Grounds Industry skill tips in this character's actual currently
+    active industry jobs (real activity_id per job), real historical
+    industry activity from the wallet journal (catches work that isn't
+    running right at this moment), and real ore/ice mining totals for the
+    reprocessing-yield skills."""
+    manufacturing = profile["industry_activity"]["active_manufacturing"]
+    research = profile["industry_activity"]["active_research"]
+    journal_isk = profile["industry_activity"]["journal_isk"]
+
+    def job_entry(jobs, label):
+        factor = 1.0 + (0.4 if jobs else 0.0) + (0.2 if journal_isk else 0.0)
+        if jobs:
+            names = ", ".join(j["product"] for j in jobs[:3])
+            why = f"You currently have {len(jobs)} active {label} job(s) ({names}) — this applies directly there."
+        elif journal_isk:
+            why = (
+                f"No {label} jobs running right now, but your wallet shows {abs(journal_isk):,.0f} ISK worth "
+                f"of real industry-related transactions recently — this has applied there before."
+            )
+        else:
+            why = f"You have no active {label} jobs right now."
+        return {"factor": factor, "why": why}
+
+    manu_entry = job_entry(manufacturing, "manufacturing")
+    research_entry = job_entry(research, "research")
+    advanced_entry = {
+        "factor": max(manu_entry["factor"], research_entry["factor"]),
+        "why": f"{manu_entry['why']} {research_entry['why']}",
+    }
+
+    mining_totals = profile["mining_activity"]["totals"]
+    days = profile["mining_activity"]["window_days"]
+    reprocess_isk = (mining_totals.get("Ore", 0) or 0) + (mining_totals.get("Ice", 0) or 0)
+    reprocess_entry = {
+        "factor": 1.0 + (0.3 if reprocess_isk > 0 else 0.0),
+        "why": (
+            f"You've mined {reprocess_isk:,.0f} ISK of ore/ice in the last {days} days that this yield "
+            f"bonus would apply to if you reprocess it."
+            if reprocess_isk > 0 else
+            f"You haven't mined any ore or ice in the last {days} days to reprocess with this bonus."
+        ),
+    }
+
+    market = profile["market_activity"]
+    order_count, undercut_count, isk_at_stake = (
+        market["order_count"], market["undercut_count"], market["isk_at_stake"],
+    )
+    if order_count:
+        accounting_entry = {
+            "factor": 1.0 + 0.2,
+            "why": f"You currently have {order_count} open market order(s) — this cuts the sales tax on every one of them.",
+        }
+        broker_entry = {
+            "factor": 1.0 + 0.2,
+            "why": f"You currently have {order_count} open market order(s) — this cuts the listing cost on every one of them.",
+        }
+    else:
+        accounting_entry = {"factor": 1.0, "why": "You have no open market orders right now for this to apply to."}
+        broker_entry = {"factor": 1.0, "why": "You have no open market orders right now for this to apply to."}
+
+    if undercut_count:
+        advanced_broker_entry = {
+            "factor": 1.0 + 0.4,
+            "why": (
+                f"You have {undercut_count} order(s) currently being undercut/outbid "
+                f"({isk_at_stake:,.0f} ISK at stake) — this makes relisting them at a competitive "
+                f"price cheaper."
+            ),
+        }
+    else:
+        advanced_broker_entry = {
+            "factor": 1.0,
+            "why": "None of your open orders are currently being undercut, so relisting cost isn't an issue right now.",
+        }
+
+    return {
+        "Industry": manu_entry,
+        "Advanced Industry": advanced_entry,
+        "Mass Production": manu_entry,
+        "Advanced Mass Production": manu_entry,
+        "Laboratory Operation": research_entry,
+        "Advanced Laboratory Operation": research_entry,
+        "Metallurgy": research_entry,
+        "Research": research_entry,
+        "Science": research_entry,
+        "Reprocessing": reprocess_entry,
+        "Reprocessing Efficiency": reprocess_entry,
+        "Accounting": accounting_entry,
+        "Broker Relations": broker_entry,
+        "Advanced Broker Relations": advanced_broker_entry,
+    }
+
+
+def _mission_context(profile):
+    """New: Mission Running skills previously got zero personalization at
+    all. Grounds them in real mission-reward and NPC-bounty ISK from the
+    wallet journal — verified live against this character's real journal
+    (ref_type agent_mission_reward/agent_mission_time_bonus_reward for
+    missions, bounty_prizes for NPC-kill bounties, a related but distinct
+    real signal cited alongside rather than merged in, since it can come
+    from plain ratting too, not only missions)."""
+    m = profile["mission_activity"]
+    days = profile["mining_activity"]["window_days"]  # same dashboard-wide window
+    mission_isk, mission_count = m["mission_isk"], m["mission_count"]
+    bounty_isk, bounty_count = m["bounty_isk"], m["bounty_count"]
+
+    factor = 1.0 + (0.4 if mission_isk > 0 else 0.0)
+    if mission_isk > 0:
+        why = (
+            f"You've earned {mission_isk:,.0f} ISK from {mission_count} mission reward(s) in the last "
+            f"{days} days — this applies directly there."
+        )
+    else:
+        why = f"You haven't turned in any missions in the last {days} days."
+    if bounty_isk > 0:
+        why += f" You've also earned {bounty_isk:,.0f} ISK from NPC bounties ({bounty_count} entries) in the same window."
+
+    entry = {"factor": factor, "why": why}
+    return {name: entry for name in skill_plan.CORE_TARGETS["Mission Running"]}
+
+
+_PVP_STAT_SKILLS = {
+    "Shield Management": ("shield_capacity", "shield capacity", "raise"),
+    "Hull Upgrades": ("armor_hp", "armor hit points", "raise"),
+    "Shield Operation": ("shield_recharge_ms", "shield recharge time (ms)", "lower"),
+}
+
+
+def _pvp_context(profile, ship, pvp_rows):
+    """Real before/after hull-stat numbers (a small registry instead of
+    hardcoded branches, so a future stat addition doesn't need new code),
+    reduced-fidelity hardpoint-count context (turret/launcher slot COUNT
+    on the character's current ship only — no claim about which weapon is
+    actually fitted, since there's no reliable "what's fitted right now"
+    data source without a much bigger fitting calculator), and real
+    zKillboard activity — a character with real recent kills/losses gets
+    a higher ranking factor than one who trained the same skills but
+    never uses them, and one taking more losses than kills gets a further
+    boost toward survivability skills specifically."""
+    hull = ship.get("hull_stats") or {}
+    ship_label = ship.get("type_name") or "your ship"
+    rows_by_name = {r["name"]: r for r in pvp_rows}
+
+    activity = profile["pvp_activity"]
+    kills, losses = activity["kills"], activity["losses"]
+    window_days = activity["window_days"]
+    has_activity = bool(kills or losses)
+    activity_boost = (0.3 if has_activity else 0.0) + (0.2 if len(losses) > len(kills) else 0.0)
+    if has_activity:
+        activity_sentence = (
+            f" You've had {len(kills)} kill(s) and {len(losses)} loss(es) on zKillboard in the last "
+            f"{window_days} days — this is currently relevant to how you actually play."
+        )
+    else:
+        activity_sentence = (
+            f" No kills or losses showed up on zKillboard in the last {window_days} days — "
+            "this is ready whenever you use it."
+        )
+
+    def stat_line(skill_name, attr_key, unit, verb):
+        base = hull.get(attr_key)
+        row = rows_by_name.get(skill_name)
+        if base is None or not row:
+            return None
+        levels_remaining = max(0, row.get("target", 0) - row.get("trained", 0))
+        if levels_remaining <= 0:
+            return None
+        match = skill_plan.PCT_PER_LEVEL_RE.search(row.get("description") or "")
+        if not match:
+            return None
+        pct_per_level = float(match.group(1))
+        total_pct = pct_per_level * levels_remaining
+        trained_roman = skill_plan.ROMAN.get(row["trained"], "?")
+        target_roman = skill_plan.ROMAN.get(row["target"], "?")
+        new_value = base * (1 + total_pct / 100) if verb == "raise" else base * (1 - total_pct / 100)
+        return (
+            f"Training from {trained_roman} to {target_roman} would {verb} your {ship_label}'s "
+            f"base {unit} from {base:,.0f} to {new_value:,.0f} (base hull stat — fitted modules "
+            f"and rigs aren't included)."
+        )
+
+    context = {}
+    for skill_name, (attr_key, unit, verb) in _PVP_STAT_SKILLS.items():
+        line = stat_line(skill_name, attr_key, unit, verb)
+        if line:
+            context[skill_name] = {"factor": 1.0 + activity_boost, "why": line + activity_sentence}
+
+    turret_count = hull.get("turret_hardpoints")
+    launcher_count = hull.get("launcher_hardpoints")
+    if turret_count or launcher_count:
+        hardpoint_sentence = (
+            f"Your {ship_label} has {int(turret_count or 0)} turret and {int(launcher_count or 0)} "
+            f"launcher hardpoint(s) — this benefits all of them (hardpoint count only, not which "
+            f"weapon is actually fitted)."
+        ) + activity_sentence
+        for skill_name in ("Signature Analysis", "Target Management", "Long Range Targeting"):
+            row = rows_by_name.get(skill_name)
+            if not row or row.get("status") == "ok":
+                continue
+            existing = context.get(skill_name)
+            if existing:
+                context[skill_name] = {
+                    "factor": max(existing["factor"], 1.0 + activity_boost + 0.1),
+                    "why": f"{existing['why']} {hardpoint_sentence}",
+                }
+            else:
+                context[skill_name] = {"factor": 1.0 + activity_boost + 0.1, "why": hardpoint_sentence}
+
+    # DED Connections' real bonus is a flat ISK payout per pirate bounty —
+    # the same bounty_prizes wallet-journal signal already computed for
+    # Mission Running, a new consumer of the same real data.
+    bounty = profile["mission_activity"]
+    bounty_isk, bounty_count = bounty["bounty_isk"], bounty["bounty_count"]
+    ded_row = rows_by_name.get("DED Connections")
+    if ded_row and ded_row.get("status") != "ok":
+        if bounty_isk > 0:
+            why = (
+                f"You've earned {bounty_isk:,.0f} ISK from {bounty_count} NPC bounty prize(s) in the "
+                f"last {activity['window_days']} days — this bonus pays out on every one of those."
+            )
+        else:
+            why = f"You haven't collected any NPC bounty prizes in the last {activity['window_days']} days."
+        context["DED Connections"] = {"factor": 1.0 + (0.3 if bounty_isk > 0 else 0.0), "why": why}
+
+    # Any PVP skill without a specific stat/hardpoint/bounty tie-in still
+    # gets the real activity signal folded into its ranking rather than
+    # nothing.
+    for row in pvp_rows:
+        name = row["name"]
+        if name not in context and has_activity:
+            context[name] = {"factor": 1.0 + activity_boost, "why": activity_sentence.strip()}
+
+    return context
+
+
+_SKILLS_TAB_CATEGORIES = ("Quality of Life", "Mission Running", "Exploration")
+
+
+def _skills_theme_context(profile):
+    """New: Skills-tab tips previously got zero personalization at all.
+    Boosts skills belonging to the character's dominant real playstyle
+    category (blended skill-training ratio + real activity confirmation
+    from _build_character_profile) when that dominant category is one of
+    the ones actually shown on this tab, and explains the detected theme
+    — honestly distinguishing skill-investment-only from
+    activity-confirmed, rather than implying more certainty than the data
+    supports."""
+    dominant = profile["dominant_category"]
+    if not dominant or dominant not in _SKILLS_TAB_CATEGORIES:
+        return {}
+
+    info = profile["theme"][dominant]
+    pct = info["skill_ratio"] * 100
+    if info["confirmed_by_activity"]:
+        why = (
+            f"Your training leans heavily {dominant} ({pct:.0f}% of core skills at target), and your "
+            f"real activity backs it up — this keeps that going."
+        )
+    else:
+        why = (
+            f"You've trained heavily into {dominant} ({pct:.0f}% of core skills at target), but no "
+            f"matching real activity showed up recently — these skills are ready whenever you use them."
+        )
+
+    entry = {"factor": 1.5, "why": why}
+    return {name: entry for name in skill_plan.CORE_TARGETS[dominant]}
+
+
+_EMPTY_SKILL_PLANS = {cat: [] for cat in ("Mining", "Industry", "PVP", "Quality of Life", "Mission Running", "Exploration")}
+
+
+def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
+    """Everything the web dashboard needs, as plain JSON-able data. Every
+    section that needs a specific ESI scope is wrapped with _scoped()/
+    _scoped_result() so a single missing permission degrades just that
+    section (surfaced to the frontend via the "permissions" dict below)
+    instead of crashing the whole dashboard. Almost all sections are
+    independent of each other, so they're all submitted to one thread
+    pool up front and only actually waited on where a real dependency
+    requires it (mined_type_ids needs mining_breakdown; skill_groups and
+    tips personalization need trained_skills; tips need several other
+    sections resolved first) — this is what keeps total wall-clock time
+    close to the slowest single section instead of the sum of all of
+    them."""
+    info = auth.verify_token(auth.get_access_token())
+    char_id = info["CharacterID"]
+
+    with ThreadPoolExecutor(max_workers=20) as pool:
+        f_mining_breakdown = pool.submit(get_mining_breakdown_data, mining_days)
+        f_skill_plans = pool.submit(skill_plan.get_all_skill_plans_data)
+        f_corp_overview = pool.submit(corp_overview.get_corp_overview_data)
+        f_ship = pool.submit(get_ship_data)
+        f_active_jobs = pool.submit(get_active_jobs_data)
+        f_market_order_tips = pool.submit(get_market_order_tips, char_id, 2)
+        f_wallet = pool.submit(esi.get_wallet_balance)
+        f_net_isk = pool.submit(get_net_isk_data, mining_days)
+        f_location = pool.submit(esi.get_location_data)
+        f_skills_summary = pool.submit(esi.get_skills_summary)
+        f_assets = pool.submit(get_assets_data)
+        f_blueprints = pool.submit(esi.get_blueprints_data, limit=25)
+        f_current_training = pool.submit(skill_plan.get_current_training_data)
+        f_mining = pool.submit(get_mining_throughput_data, mining_days, hours_per_day)
+        f_sales = pool.submit(get_sales_throughput_data, mining_days, hours_per_day)
+        f_zkill = pool.submit(zkillboard.get_zkill_data, char_id)
+        f_zkill_global = pool.submit(zkillboard.get_global_top_kill)
+        f_plex = pool.submit(get_plex_data, vault_plex_owned)
+        f_corporation = pool.submit(get_corporation_data)
+        f_portrait = pool.submit(get_portrait_data_uri, char_id)
+
+        mining_breakdown, mining_breakdown_perm = _scoped_result(
+            f_mining_breakdown, "mining",
+            {"window_days": mining_days, "category_totals": {"Ore": 0.0, "Ice": 0.0, "Gas": 0.0, "Other": 0.0}, "by_type": []},
+        )
+        mined_type_ids = [r["type_id"] for r in mining_breakdown["by_type"]]
+        f_jita_prices = pool.submit(get_jita_resource_prices, mined_type_ids)
+
+        skill_result, skills_perm = _scoped_result(
+            f_skill_plans, "skills", (_EMPTY_SKILL_PLANS, {}, {})
+        )
+        skill_plans, trained_skills, queued_skills = skill_result
+        skill_groups = skill_plan.get_skill_groups_data(trained_skills, queued_skills) if skills_perm["available"] else {}
+
+        corp_overview_data = f_corp_overview.result()
+        ship, _ship_perm = _scoped_result(
+            f_ship, "ship", {"type_id": None, "type_name": None, "ship_name": None, "hull_stats": {}}
+        )
+        active_jobs, active_jobs_perm = _scoped_result(f_active_jobs, "active_jobs", [])
+
+        # Resolved here (earlier than their "natural" position further down)
+        # because the multi-factor tip context below needs them — wallet
+        # journal activity and zKillboard activity are two of the real
+        # signals _build_character_profile() blends together. The futures
+        # were already submitted at the top of the pool, so pulling their
+        # results forward doesn't change when the fetch itself runs.
+        wallet_isk, wallet_perm = _scoped_result(f_wallet, "wallet", 0)
+        net_isk, net_isk_perm = _scoped_result(
+            f_net_isk, "wallet",
+            {"window_days": mining_days, "net_isk": 0, "earned": 0, "spent": 0,
+             "by_ref_type": {"mission": {"count": 0, "isk": 0}, "bounty": {"count": 0, "isk": 0},
+                              "industry": {"count": 0, "isk": 0}}},
+        )
+        zkill = f_zkill.result()
+        market_order_tips, market_stats = f_market_order_tips.result()
+
+        if skills_perm["available"]:
+            profile = _build_character_profile(
+                skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats
+            )
+            mining_context = _mining_context(profile)
+            industry_context = _industry_context(profile)
+            pvp_context = _pvp_context(profile, ship, skill_plans["PVP"])
+            mission_context = _mission_context(profile)
+            theme_context = _skills_theme_context(profile)
+
+            mining_skill_tips = skill_plan.rank_skill_tips(
+                skill_plans["Mining"], category_label="Mining", context=mining_context
+            )
+            industry_skill_tips = skill_plan.rank_skill_tips(
+                skill_plans["Industry"], category_label="Industry", context=industry_context
+            )
+            pvp_skill_tips = skill_plan.rank_skill_tips(
+                skill_plans["PVP"], category_label="PVP", context=pvp_context
+            )
+            skills_tab_rows = (
+                skill_plans["Quality of Life"] + skill_plans["Mission Running"] + skill_plans["Exploration"]
+            )
+            skills_tab_tips = skill_plan.rank_skill_tips(
+                skills_tab_rows, category_label="Skills", context={**theme_context, **mission_context}
+            )
+        else:
+            unavailable_tip = [{"text": "Skill-based tips aren't available right now.", "why": skills_perm["reason"]}]
+            mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = unavailable_tip
+
+        tips = {
+            "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
+                trained_skills, ship_data.MINING_SHIPS, limit=2, current_stats=ship.get("hull_stats")
+            ),
+            "Industry": industry_skill_tips + market_order_tips,
+            "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ship_data.PVP_SHIPS, limit=2),
+            "Skills": skills_tab_tips,
+            "Corporation": get_corp_tips(corp_overview_data),
+        }
+
+        location, location_perm = _scoped_result(f_location, "location", {"system_name": None, "security_status": None})
+        skills_summary, skills_summary_perm = _scoped_result(
+            f_skills_summary, "skills", {"total_sp": 0, "unallocated_sp": 0, "skills_trained": 0}
+        )
+        assets, assets_perm = _scoped_result(f_assets, "assets", {"total_items": 0, "distinct_locations": 0, "top_items": []})
+        blueprints, blueprints_perm = _scoped_result(f_blueprints, "blueprints", {"total": 0, "rows": []})
+        current_training, current_training_perm = _scoped_result(
+            f_current_training, "skillqueue", {"training": False, "queue_length": 0}
+        )
+        mining, mining_perm = _scoped_result(
+            f_mining, "mining",
+            {"window_days": mining_days, "active_days": 0, "total_isk": 0, "isk_per_active_day": 0,
+             "isk_per_hour": None, "hours_per_day": hours_per_day, "daily": []},
+        )
+        sales, sales_perm = _scoped_result(
+            f_sales, "wallet",
+            {"window_days": mining_days, "active_days": 0, "total_isk": 0, "isk_per_active_day": 0,
+             "isk_per_hour": None, "hours_per_day": hours_per_day, "daily": []},
+        )
+        jita_prices = f_jita_prices.result()
+        zkill_global = f_zkill_global.result()
+        plex = f_plex.result()
+        corporation = f_corporation.result()
+        portrait_data_uri = f_portrait.result()
+
+    # Skills scope failing already means trained_skills is {}, so the
+    # skills-summary permission is the more specific/accurate one to show
+    # for the Overview skillpoints stat — but a wallet or mining 401 on the
+    # very first scoped call of its kind is what determines whether that
+    # whole section shows a banner, so combine with "or" per shared scope.
+    permissions = {
+        "wallet": wallet_perm if not wallet_perm["available"] else net_isk_perm,
+        "location": location_perm,
+        "skills": skills_perm if not skills_perm["available"] else skills_summary_perm,
+        "skillqueue": current_training_perm,
+        "assets": assets_perm,
+        "blueprints": blueprints_perm,
+        "active_jobs": active_jobs_perm,
+        "mining": mining_perm if not mining_perm["available"] else mining_breakdown_perm,
+        "sales": sales_perm,
+    }
+
+    return {
+        "character": {
+            "name": info["CharacterName"],
+            "id": char_id,
+            "portrait_data_uri": portrait_data_uri,
+        },
+        "corporation": corporation,
+        "corp_overview": corp_overview_data,
+        "permissions": permissions,
+        "wallet_isk": wallet_isk,
+        "net_isk": net_isk,
+        "location": location,
+        "ship": ship,
+        "skills": skills_summary,
+        "assets": assets,
+        "blueprints": blueprints,
+        "current_training": current_training,
+        "skill_plans": skill_plans,
+        "skill_groups": skill_groups,
+        "tips": tips,
+        "active_jobs": active_jobs,
+        "mining": mining,
+        "mining_breakdown": mining_breakdown,
+        "jita_prices": jita_prices,
+        "sales": sales,
+        "zkill": zkill,
+        "zkill_global": zkill_global,
+        "plex": plex,
+    }
+
+
+def generate_dashboard(mining_days=7, hours_per_day=None):
+    if esi.eve_sso_auth is None:
+        print("eve_sso_auth.py not found — put it in the same folder as this script.")
+        sys.exit(1)
+
+    info = auth.verify_token(auth.get_access_token())
+    banner = "=" * 60
+    print(f"\n{banner}\nDASHBOARD — {info['CharacterName']} (character_id {info['CharacterID']})\n{banner}")
+
+    _header("CURRENT STATE")
+    esi.cmd_wallet()
+    esi.cmd_location()
+    _ship()
+    esi.cmd_skills()
+
+    _header("ASSETS & BLUEPRINTS")
+    _assets_summary()
+    print()
+    esi.cmd_blueprints()
+
+    _header("PLANS: SKILL QUEUE & MINING GAPS")
+    skill_plan.generate_mining_plan()
+
+    _header("PLANS: ACTIVE INDUSTRY JOBS")
+    _active_jobs()
+
+    _header(f"MINING THROUGHPUT (last {mining_days} days)")
+    _mining_throughput(mining_days, hours_per_day)
+    print()
+
+
+if __name__ == "__main__":
+    generate_dashboard()

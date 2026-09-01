@@ -1,0 +1,5 @@
+flask
+requests
+truststore
+pywebview
+pythonnet

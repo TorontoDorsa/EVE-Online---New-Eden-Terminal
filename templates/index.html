@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Eden Terminal</title>
+<style>
+  :root {
+    --bg: #05070c;
+    --panel: #0c1220;
+    --border: #1c2a45;
+    --amber: #ffb000;
+    --cyan: #3ddcff;
+    --text: #d7e1f2;
+    --text-dim: #6f7f9e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  h1 {
+    font-size: 20px;
+    letter-spacing: 1px;
+    margin: 0;
+  }
+  #login-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #login-status {
+    font-family: Consolas, monospace;
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--text-dim);
+  }
+  #login-status.logged-in { color: var(--cyan); }
+  #login-status.logging-in { color: var(--amber); }
+  button {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--cyan); }
+  input, select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 0;
+  }
+  .tab-btn {
+    background: var(--panel);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    padding: 8px 16px;
+  }
+  .tab-btn.active { color: var(--amber); }
+  .tab-panel {
+    display: none;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    padding: 16px;
+    border-radius: 0 6px 6px 6px;
+  }
+  .tab-panel.active { display: block; }
+  .row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--text-dim); }
+  .grid-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 8px 12px;
+  }
+  .note {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-bottom: 12px;
+  }
+  #output-label {
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    font-weight: bold;
+    color: var(--text-dim);
+    margin: 18px 0 4px 2px;
+  }
+  #output {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-family: Consolas, monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    min-height: 220px;
+    max-height: 420px;
+    overflow-y: auto;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>NEW EDEN DATA TERMINAL</h1>
+  <div id="login-area">
+    <span id="login-status">● CHECKING…</span>
+    <button id="login-btn">Login via EVE SSO</button>
+    <a href="/dashboard" style="margin-left: 4px;">Dashboard</a>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="public">Public</button>
+  <button class="tab-btn" data-tab="character">Character</button>
+  <button class="tab-btn" data-tab="corp">Corporation</button>
+</div>
+
+<div class="tab-panel active" id="tab-public">
+  <div class="row">
+    <button onclick="run('status')">Server Status</button>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>Item name</label>
+      <input id="item" value="Tritanium">
+    </div>
+    <div class="field">
+      <label>Region</label>
+      <select id="region">
+        {% for r in regions %}
+        <option {% if r == "The Forge" %}selected{% endif %}>{{ r }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button onclick="run('market', {item: val('item'), region: val('region')})">Pull Market Orders</button>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>System name</label>
+      <input id="system" value="Jita">
+    </div>
+    <button onclick="run('system', {system: val('system')})">Lookup System</button>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-character">
+  <div class="grid-buttons">
+    <button onclick="run('whoami')">Who Am I</button>
+    <button onclick="run('wallet')">Wallet Balance</button>
+    <button onclick="run('skills')">Skills</button>
+    <button onclick="run('location')">Current Location</button>
+    <button onclick="run('jobs')">Industry Jobs</button>
+    <button onclick="run('mining')">Mining Ledger (30d)</button>
+    <button onclick="run('blueprints')">Blueprints</button>
+    <button onclick="run('orders')">Open Market Orders</button>
+    <button onclick="run('mining-skills')">Mining Skill Plan</button>
+  </div>
+</div>
+
+<div class="tab-panel" id="tab-corp">
+  <p class="note">Requires the appropriate corp role — shows a clean error if your character doesn't have access.</p>
+  <div class="grid-buttons" style="margin-bottom: 16px;">
+    <button onclick="run('corp-jobs')">Corp Industry Jobs</button>
+    <button onclick="run('corp-blueprints')">Corp Blueprints</button>
+    <button onclick="run('corp-orders')">Corp Open Orders</button>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>Structure ID</label>
+      <input id="structure_id" placeholder="e.g. 1035466617946">
+    </div>
+    <button onclick="run('structure-market', {structure_id: val('structure_id')})">Structure Market</button>
+  </div>
+  <div class="row">
+    <div class="field">
+      <label>Lookback days</label>
+      <input id="mr_days" value="30" style="width: 60px;">
+    </div>
+    <div class="field">
+      <label>Output file</label>
+      <input id="mr_out" value="mining_report.html">
+    </div>
+    <button onclick="run('mining-report', {days: val('mr_days'), out: val('mr_out')})">Generate Mining Report</button>
+  </div>
+</div>
+
+<div id="output-label">OUTPUT</div>
+<div id="output">Ready. Try Server Status first — it needs no login.</div>
+
+<script>
+function val(id) { return document.getElementById(id).value; }
+
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    btn.classList.add("active");
+    document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+  });
+});
+
+function append(text) {
+  const out = document.getElementById("output");
+  out.textContent += "\n" + text;
+  out.scrollTop = out.scrollHeight;
+}
+
+async function run(command, params) {
+  append(`$ ${command}`);
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ command, params: params || {} }),
+    });
+    const data = await res.json();
+    if (data.output) append(data.output.trim());
+    if (data.error) append(`Error: ${data.error}`);
+  } catch (e) {
+    append(`Request failed: ${e}`);
+  }
+}
+
+async function refreshStatus() {
+  try {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+    const el = document.getElementById("login-status");
+    if (data.logged_in) {
+      el.textContent = "● LOGGED IN";
+      el.className = "logged-in";
+    } else {
+      el.textContent = "● NOT LOGGED IN";
+      el.className = "";
+    }
+  } catch (e) {
+    // leave status as-is on transient failure
+  }
+}
+
+document.getElementById("login-btn").addEventListener("click", async () => {
+  const el = document.getElementById("login-status");
+  el.textContent = "● LOGGING IN…";
+  el.className = "logging-in";
+  append("$ Opening browser for EVE SSO login...");
+  try {
+    const res = await fetch("/api/login", { method: "POST" });
+    const data = await res.json();
+    if (data.output) append(data.output.trim());
+    if (data.error) append(`Error: ${data.error}`);
+  } catch (e) {
+    append(`Login request failed: ${e}`);
+  }
+  refreshStatus();
+});
+
+refreshStatus();
+</script>
+
+</body>
+</html>

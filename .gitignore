@@ -1,0 +1,34 @@
+# --- Secrets & personal account data (never commit these) ---
+esi_token.json
+eve_credentials.json
+dashboard_data.json
+corp_overview_data.json
+skill_plans_with_desc.json
+portrait_data_uri.txt
+eve_history.db
+mining_report.html
+*.log
+.env
+
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- PyInstaller build output (rebuild with README.md's "Building it yourself" instructions) ---
+build/
+dist/
+*.spec
+
+# --- Editor / tool config ---
+.claude/
+.vscode/
+.idea/
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db

@@ -1,0 +1,2247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>New Eden Terminal</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #05070c;
+    --surface: #0d1420;
+    --surface-2: #121b2c;
+    --border: #21314f;
+    --text: #dce4f5;
+    --text-dim: #7c8caf;
+    --accent: #ffb545;
+    --accent-dim: rgba(255, 181, 69, 0.38);
+    --status-ok: #189963;
+    --status-queued: #2b9bd6;
+    --status-gap: #e5484d;
+
+    --font-display: "Rajdhani", "Segoe UI", sans-serif;
+    --font-body: "IBM Plex Sans", "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    padding: 32px 40px 60px;
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(255,181,69,0.05), transparent 40%),
+      radial-gradient(circle at 85% 92%, rgba(43,155,214,0.06), transparent 45%);
+  }
+
+  h1, h2, h3, .eyebrow, .stat-label, .pill, th {
+    font-family: var(--font-display);
+  }
+
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  a { color: var(--accent); }
+
+  /* ---- header ---- */
+
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+  .identity {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+  }
+  .portrait {
+    width: 76px;
+    height: 76px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 0 0 3px rgba(255, 181, 69, 0.14);
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 6px;
+  }
+  h1 {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin: 0;
+    text-wrap: balance;
+    color: var(--text);
+  }
+  .char-id {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+  .refreshed {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .refreshed .dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--status-ok);
+    margin-right: 6px;
+    box-shadow: 0 0 6px var(--status-ok);
+  }
+
+  /* ---- top-level tabs ---- */
+
+  .dash-tabs {
+    display: flex;
+    gap: 28px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 28px;
+  }
+  .dash-tab-btn {
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-dim);
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 13px;
+    padding: 0 2px 12px;
+    cursor: pointer;
+  }
+  .dash-tab-btn:hover { color: var(--text); }
+  .dash-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .dash-tab-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dash-tab-panel { display: none; }
+  .dash-tab-panel.active { display: block; }
+
+  /* ---- section chrome ---- */
+
+  section { margin-bottom: 36px; }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px 22px;
+  }
+
+  /* ---- stat tile grid ---- */
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .stat-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .stat-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .stat-value {
+    font-family: var(--font-mono);
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+  }
+  .stat-value.accent { color: var(--accent); }
+  .stat-value.positive { color: var(--status-ok); }
+  .stat-value.negative { color: var(--status-gap); }
+  .stat-sub {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-top: 5px;
+  }
+
+  .sec-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 7px;
+    border-radius: 4px;
+    margin-top: 6px;
+  }
+  .sec-pill.highsec { background: rgba(24,153,99,0.15); color: var(--status-ok); }
+  .sec-pill.lowsec  { background: rgba(255,181,69,0.15); color: var(--accent); }
+  .sec-pill.nullsec { background: rgba(229,72,77,0.15); color: var(--status-gap); }
+
+  /* ---- two column layout ---- */
+
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 860px) {
+    .columns { grid-template-columns: 1fr; }
+  }
+
+  .subpanel + .subpanel { margin-top: 20px; }
+  .subpanel h3 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    margin: 0 0 12px;
+  }
+  .skill-name-hover {
+    text-decoration: underline dotted var(--border);
+    text-underline-offset: 3px;
+    cursor: help;
+  }
+
+  /* ---- tables ---- */
+
+  .table-scroll { overflow-x: auto; }
+  table { width: 100%; min-width: 0; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+  th {
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    padding: 0 8px 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 8px 8px 8px 0;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+    overflow-wrap: break-word;
+  }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th:first-child, td:first-child { width: 44%; overflow-wrap: normal; word-break: normal; }
+
+  .kind-badge {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+  }
+
+  .status-pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 40px;
+  }
+  .status-pill.ok { background: rgba(24,153,99,0.16); color: var(--status-ok); }
+  .status-pill.queued { background: rgba(43,155,214,0.16); color: var(--status-queued); }
+  .status-pill.gap { background: rgba(229,72,77,0.16); color: var(--status-gap); }
+  .status-pill.unknown { background: var(--surface-2); color: var(--text-dim); }
+
+  .skill-track {
+    display: flex;
+    gap: 3px;
+  }
+  .skill-track .pip {
+    width: 12px;
+    height: 8px;
+    border-radius: 2px;
+    background: var(--border);
+  }
+  .skill-track .pip.trained { background: var(--text-dim); }
+  .skill-track .pip.queued-pip { background: var(--status-queued); }
+  .skill-track .pip.target-mark { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+  .skill-group-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+  }
+  .skill-group-row:last-child { border-bottom: none; }
+  #skill-group-select { width: auto; min-width: 200px; }
+
+  /* ---- currently training ---- */
+
+  .training-name {
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+  .training-level {
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+    font-size: 14px;
+    margin-left: 6px;
+  }
+  .training-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin: 12px 0 6px;
+  }
+  .training-meta .num { color: var(--text); }
+  .progress-track {
+    height: 7px;
+    border-radius: 4px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+  }
+  .training-queue-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  /* ---- assets ---- */
+
+  .asset-summary-row {
+    display: flex;
+    gap: 22px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .asset-summary-row b {
+    font-family: var(--font-mono);
+    color: var(--text);
+    font-weight: 500;
+  }
+  .item-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13.5px;
+  }
+  .item-row:last-child { border-bottom: none; }
+  .item-row .qty {
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---- planetary interaction (placeholder) ---- */
+
+  .pi-placeholder {
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .pi-placeholder .pi-scope {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-size: 11.5px;
+  }
+
+  /* ---- jobs ---- */
+
+  .job-row {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .job-row:last-child { border-bottom: none; }
+  .job-name { font-size: 13.5px; color: var(--text); }
+  .job-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 3px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .job-meta .countdown { font-family: var(--font-mono); color: var(--accent); }
+  .job-price {
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--text-dim);
+  }
+  .job-price .num { color: var(--text); }
+
+  /* ---- kills / losses ---- */
+
+  .kill-row .job-name a {
+    color: var(--text);
+    text-decoration: none;
+  }
+  .kill-row .job-name a:hover { color: var(--accent); text-decoration: underline; }
+  .kill-row .job-meta .countdown.kill-value { color: var(--status-ok); }
+  .kill-row .job-meta .countdown.loss-value { color: var(--status-gap); }
+  .kill-tag {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--surface-2);
+    color: var(--text-dim);
+    margin-right: 6px;
+  }
+  .kill-tag.solo { color: var(--accent); }
+  .zkill-credit {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: right;
+  }
+  .zkill-credit a { color: var(--text-dim); }
+  .zkill-credit a:hover { color: var(--accent); }
+
+  /* ---- callouts (mining throughput, plex) ---- */
+
+  .callout-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .callout-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .callout-value {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .callout-value.positive { color: var(--status-ok); }
+  .callout-value.kill-value { color: var(--status-ok); }
+  .callout-value.loss-value { color: var(--status-gap); }
+  .callout-note a { color: inherit; text-decoration: underline; }
+  .callout-note a:hover { color: var(--accent); }
+
+  .plex-input-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+  .plex-input-row .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .plex-input-row label {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  #plex-vault-input {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    padding: 8px 10px;
+    width: 160px;
+  }
+  #plex-vault-input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+    border-color: var(--accent);
+  }
+  #plex-recalc-btn {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 13px;
+    padding: 9px 18px;
+    cursor: pointer;
+  }
+  #plex-recalc-btn:hover { filter: brightness(1.1); }
+  #plex-recalc-btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+
+  .callout-note {
+    font-size: 11.5px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  .chart-wrap { position: relative; }
+  .chart-svg { width: 100%; height: 200px; display: block; overflow: visible; }
+  .bar { cursor: pointer; transition: opacity 0.15s ease; }
+  .bar-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    fill: var(--text-dim);
+  }
+  .gridline { stroke: var(--border); stroke-width: 1; }
+
+  .chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translate(-50%, -100%);
+    transition: opacity 0.1s ease;
+    z-index: 5;
+  }
+  .chart-tooltip .t-date { color: var(--text-dim); font-size: 10.5px; margin-bottom: 2px; }
+  .chart-tooltip .t-isk { color: var(--accent); font-weight: 500; }
+
+  footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .footer-link {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 11.5px;
+  }
+  .footer-link a { color: var(--text-dim); text-decoration: none; }
+  .footer-link a:hover { color: var(--accent); text-decoration: underline; }
+  .footer-link button {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 11.5px;
+    font-family: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    padding: 0;
+  }
+  .footer-link button:hover { color: var(--accent); text-decoration: underline; }
+  .footer-link button:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
+
+  /* ---- footnote markers & sources ---- */
+
+  .src-ref {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    margin-left: 5px;
+    vertical-align: super;
+    line-height: 0;
+  }
+  .src-ref a {
+    color: var(--text-dim);
+    text-decoration: none;
+    margin-right: 2px;
+  }
+  .src-ref a:hover { color: var(--accent); text-decoration: underline; }
+
+  .sources-section {
+    margin-top: 40px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+  }
+  .sources-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    counter-reset: src;
+  }
+  .sources-list li {
+    counter-increment: src;
+    font-size: 12px;
+    color: var(--text-dim);
+    padding-left: 22px;
+    position: relative;
+    line-height: 1.5;
+    scroll-margin-top: 20px;
+  }
+  .sources-list li::before {
+    content: "[" counter(src) "]";
+    position: absolute;
+    left: 0;
+    font-family: var(--font-mono);
+    color: var(--accent);
+  }
+  .sources-list a { color: var(--text); }
+  .sources-list a:hover { color: var(--accent); }
+  .sources-list code {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+    #loading .spinner { animation: none !important; }
+  }
+
+  /* ---- live dashboard: top bar (login + refresh controls) ---- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 16px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-left { display: flex; align-items: center; gap: 12px; }
+  #login-status {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+  }
+  #login-status.logged-in { color: var(--status-ok); }
+  #login-status.logging-in { color: var(--accent); }
+  .topbar-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .topbar-controls label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .topbar-controls input,
+  .topbar-controls select {
+    width: 64px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    padding: 6px 8px;
+    cursor: pointer;
+  }
+  .topbar-controls input:focus-visible,
+  .topbar-controls select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .topbar-controls select:disabled { opacity: 0.5; cursor: default; }
+  .topbar-btn {
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 6px;
+    font-family: var(--font-display);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 12.5px;
+    padding: 8px 16px;
+    cursor: pointer;
+  }
+  #refresh-btn, #mining-refresh-btn, #sales-refresh-btn { min-width: 92px; text-align: center; }
+  .topbar-btn:hover { filter: brightness(1.1); }
+  .topbar-btn:disabled { opacity: 0.5; cursor: default; }
+  .topbar-link {
+    color: var(--text-dim);
+    font-size: 12px;
+    text-decoration: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 14px;
+  }
+  .topbar-link:hover { color: var(--text); border-color: var(--accent); }
+
+  #banner {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin-bottom: 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  #banner.show { display: flex; }
+  #banner.error { border-color: var(--status-gap); color: var(--text); }
+  #banner .banner-text { flex: 1; }
+  #banner .banner-action {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  #banner .banner-action:hover { border-color: var(--accent); color: var(--accent); }
+
+  .section-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--status-gap);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .section-banner .section-banner-text { flex: 1; }
+  .section-banner .section-banner-action {
+    flex-shrink: 0;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 11.5px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .section-banner .section-banner-action:hover { border-color: var(--accent); color: var(--accent); }
+
+  #loading {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  #loading.show { display: flex; }
+  #loading .spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #content { display: none; }
+  #content.show { display: block; }
+
+  .tip-box {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 13.5px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .tip-box .tip-icon { color: var(--accent); flex-shrink: 0; }
+  .tip-box + .tip-box {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .tip-box .tip-label {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-right: 6px;
+  }
+  .tip-box .tip-body { flex: 1; min-width: 0; }
+  .tip-learn-why {
+    display: inline-block;
+    margin-left: 8px;
+    font-size: 11.5px;
+    font-family: var(--font-mono);
+    color: var(--text-dim);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .tip-learn-why:hover { color: var(--accent); }
+  .tip-why {
+    display: none;
+    margin-top: 8px;
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border-radius: 6px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+  .tip-box.expanded .tip-why { display: block; }
+
+  /* while a refresh is in flight, the numbers on screen are stale — dim
+     and pulse them rather than hiding the page, so old values stay
+     readable until the new ones land */
+  #content.refreshing .stat-value,
+  #content.refreshing .callout-value {
+    opacity: 0.4;
+    animation: stale-pulse 1.3s ease-in-out infinite;
+  }
+  @keyframes stale-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.7; } }
+  @media (prefers-reduced-motion: reduce) {
+    #content.refreshing .stat-value,
+    #content.refreshing .callout-value { animation: none !important; opacity: 0.55; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <span id="login-status">● CHECKING…</span>
+    <button class="topbar-btn" id="login-btn">Login via EVE SSO</button>
+  </div>
+  <div class="topbar-controls">
+    <button class="topbar-btn" id="refresh-btn" disabled>Refresh</button>
+  </div>
+</div>
+
+<div id="banner"></div>
+
+<div id="loading"><span class="spinner"></span><span id="loading-text">Loading live dashboard data — this can take up to 90 seconds on the first load.</span></div>
+
+<div id="content">
+<header>
+  <div class="identity">
+    <img id="portrait" class="portrait" alt="Character portrait">
+    <div>
+      <p class="eyebrow">New Eden Terminal &middot; Current State &amp; Plans</p>
+      <h1 id="char-name">—</h1>
+      <div class="char-id" id="char-id">—</div>
+    </div>
+  </div>
+  <div class="refreshed"><span class="dot"></span>Last refreshed <span id="refresh-time" class="num"></span></div>
+</header>
+
+<nav class="dash-tabs">
+  <button class="dash-tab-btn" data-tab="overview">Overview</button>
+  <button class="dash-tab-btn" data-tab="mining">Mining</button>
+  <button class="dash-tab-btn" data-tab="industry">Industry</button>
+  <button class="dash-tab-btn" data-tab="pvpve">PVP</button>
+  <button class="dash-tab-btn" data-tab="plans">Skills</button>
+  <button class="dash-tab-btn" data-tab="corp">Corporation</button>
+</nav>
+
+<div class="dash-tab-panel" id="tab-overview">
+
+<section>
+  <div class="section-title">Current State<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div id="overview-permissions" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+  <div class="stat-grid">
+    <div class="stat-tile">
+      <div class="stat-label">Wallet Balance</div>
+      <div class="stat-value accent" id="stat-wallet">—</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Net ISK (<span id="net-isk-window"></span>)</div>
+      <div class="stat-value" id="stat-net-isk">—</div>
+      <div class="stat-sub" id="stat-net-isk-detail"></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Location</div>
+      <div class="stat-value" id="stat-system" style="font-size:19px;">—</div>
+      <span class="sec-pill" id="stat-sec-pill"></span>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Skillpoints</div>
+      <div class="stat-value" id="stat-sp">—</div>
+      <div class="stat-sub" id="stat-skills-trained"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="overview-tips"></div>
+</section>
+
+<section>
+  <div class="section-title">PLEX &amp; Omega Subscription</div>
+  <div class="panel subpanel">
+    <h3>PLEX Market<sup class="src-ref"><a href="#src-2">2</a><a href="#src-4">4</a></sup></h3>
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">PLEX Price</div>
+        <div class="callout-value" id="plex-price">—</div>
+        <div class="callout-note">server-wide average</div>
+      </div>
+      <div>
+        <div class="callout-label">1 Month Omega</div>
+        <div class="callout-value" id="plex-omega-cost">—</div>
+        <div class="callout-note" id="plex-omega-note"></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel subpanel">
+    <h3>Your PLEX Position<sup class="src-ref"><a href="#src-2">2</a><a href="#src-4">4</a><a href="#src-6">6</a></sup></h3>
+    <div class="plex-input-row">
+      <div class="field">
+        <label for="plex-vault-input">PLEX Vault balance (ESI can't see this — enter it yourself)</label>
+        <input type="number" id="plex-vault-input" min="0" step="1">
+      </div>
+      <button id="plex-recalc-btn">Calculate</button>
+    </div>
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">PLEX Owned</div>
+        <div class="callout-value" id="plex-owned">—</div>
+        <div class="callout-note" id="plex-owned-value"></div>
+      </div>
+      <div>
+        <div class="callout-label">Needed for 1 Month</div>
+        <div class="callout-value" id="plex-needed">—</div>
+        <div class="callout-note" id="plex-needed-note"></div>
+      </div>
+      <div>
+        <div class="callout-label">Cost to Buy Shortfall</div>
+        <div class="callout-value" id="plex-purchase-cost">—</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="dash-tab-panel" id="tab-mining">
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="tips-mining"></div>
+</section>
+
+<section>
+  <div class="section-title">Mining Throughput<sup class="src-ref"><a href="#src-1">1</a><a href="#src-2">2</a></sup></div>
+  <div class="panel">
+    <div class="topbar-controls" style="margin-bottom: 16px;">
+      <label for="mining_days">Window (days)</label>
+      <select id="mining_days">
+        <option value="1">1</option>
+        <option value="3">3</option>
+        <option value="7" selected>7</option>
+        <option value="14">14</option>
+        <option value="21">21</option>
+        <option value="30">30</option>
+        <option value="60">60</option>
+        <option value="90">90</option>
+      </select>
+      <button class="topbar-btn" id="mining-refresh-btn" disabled>Refresh</button>
+    </div>
+    <div class="callout-note" style="margin: -10px 0 16px;">Shared with Sales Throughput on the Industry tab — both come from the same live fetch.</div>
+    <div id="mining-permissions"></div>
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">Window</div>
+        <div class="callout-value" id="mine-window">—</div>
+        <div class="callout-note" id="mine-active-days"></div>
+      </div>
+      <div>
+        <div class="callout-label">Total Mined Value</div>
+        <div class="callout-value" id="mine-total">—</div>
+      </div>
+      <div>
+        <div class="callout-label">ISK / Active Day</div>
+        <div class="callout-value" id="mine-per-day">—</div>
+      </div>
+    </div>
+    <div id="chart-wrap" class="chart-wrap">
+      <svg id="chart-svg" class="chart-svg" viewBox="0 0 760 200" preserveAspectRatio="none"></svg>
+      <div id="tooltip" class="chart-tooltip"><div class="t-date" id="tt-date"></div><div class="t-isk" id="tt-isk"></div></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">Resource Cost (Jita)</div>
+  <div class="panel subpanel">
+    <h3>Live Jita Order Book<sup class="src-ref"><a href="#src-3">3</a></sup></h3>
+    <p class="stat-sub" style="margin-bottom: 14px;">Actual buy/sell prices in The Forge (Jita) as of this snapshot — not the server-wide average used in Resource Breakdown below.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Resource</th><th class="num">Jita Sell</th><th class="num">Jita Buy</th></tr>
+        </thead>
+        <tbody id="jita-price-table"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">Resource Breakdown<sup class="src-ref"><a href="#src-1">1</a><a href="#src-2">2</a></sup></div>
+  <div class="panel subpanel">
+    <h3>By Category</h3>
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">Ore</div>
+        <div class="callout-value" id="ore-total">—</div>
+      </div>
+      <div>
+        <div class="callout-label">Ice</div>
+        <div class="callout-value" id="ice-total">—</div>
+      </div>
+      <div>
+        <div class="callout-label">Gas</div>
+        <div class="callout-value" id="gas-total">—</div>
+      </div>
+      <div>
+        <div class="callout-label">Other</div>
+        <div class="callout-value" id="other-total">—</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel subpanel">
+    <h3>By Resource</h3>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Resource</th><th>Category</th><th class="num">Quantity</th><th class="num">Est. Value</th></tr>
+        </thead>
+        <tbody id="resource-table"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="dash-tab-panel" id="tab-industry">
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="tips-industry"></div>
+</section>
+
+<section>
+  <div class="section-title">Sales Throughput<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div class="panel">
+    <div class="topbar-controls" style="margin-bottom: 16px;">
+      <label for="mining_days_sales">Window (days)</label>
+      <select id="mining_days_sales">
+        <option value="1">1</option>
+        <option value="3">3</option>
+        <option value="7" selected>7</option>
+        <option value="14">14</option>
+        <option value="21">21</option>
+        <option value="30">30</option>
+        <option value="60">60</option>
+        <option value="90">90</option>
+      </select>
+      <button class="topbar-btn" id="sales-refresh-btn" disabled>Refresh</button>
+    </div>
+    <div class="callout-note" style="margin: -10px 0 16px;">Shared with Mining Throughput on the Mining tab — both come from the same live fetch.</div>
+    <div id="sales-permissions"></div>
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">Window</div>
+        <div class="callout-value" id="sales-window">—</div>
+        <div class="callout-note" id="sales-active-days"></div>
+      </div>
+      <div>
+        <div class="callout-label">Total Sold Value</div>
+        <div class="callout-value" id="sales-total">—</div>
+      </div>
+      <div>
+        <div class="callout-label">ISK / Active Day</div>
+        <div class="callout-value" id="sales-per-day">—</div>
+      </div>
+    </div>
+    <div id="sales-chart-wrap" class="chart-wrap">
+      <svg id="sales-chart-svg" class="chart-svg" viewBox="0 0 760 200" preserveAspectRatio="none"></svg>
+      <div id="sales-tooltip" class="chart-tooltip"><div class="t-date" id="sales-tt-date"></div><div class="t-isk" id="sales-tt-isk"></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="columns">
+  <div>
+    <div class="section-title">Blueprints<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+    <div class="panel subpanel">
+      <h3>Blueprints</h3>
+      <div class="stat-sub" style="margin: -4px 0 12px;">
+        <span class="skill-name-hover" title="Material Efficiency (0–10) — reduces material waste per manufacturing run, up to 10% less at ME 10.">ME</span>
+        = Material Efficiency &nbsp;·&nbsp;
+        <span class="skill-name-hover" title="Time Efficiency (0–20, even numbers only) — reduces manufacturing/research time per run, up to 20% less at TE 20.">TE</span>
+        = Time Efficiency
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr><th>Blueprint</th><th>Kind</th><th class="num"><span class="skill-name-hover" title="Material Efficiency (0–10) — reduces material waste per manufacturing run, up to 10% less at ME 10.">ME</span></th><th class="num"><span class="skill-name-hover" title="Time Efficiency (0–20, even numbers only) — reduces manufacturing/research time per run, up to 20% less at TE 20.">TE</span></th><th class="num">Runs</th></tr>
+          </thead>
+          <tbody id="bp-table"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel subpanel">
+      <h3>Assets</h3>
+      <div id="assets-block"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">Active Industry Jobs<sup class="src-ref"><a href="#src-1">1</a><a href="#src-2">2</a></sup></div>
+    <div class="panel subpanel">
+      <h3>Active Industry Jobs</h3>
+      <div id="jobs-list"></div>
+    </div>
+    <div class="panel subpanel">
+      <h3>Planetary Interaction</h3>
+      <div id="pi-block"></div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="dash-tab-panel" id="tab-pvpve">
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="tips-pvpve"></div>
+</section>
+
+<section>
+  <div class="section-title">Highlights<sup class="src-ref"><a href="#src-5">5</a></sup></div>
+  <div class="panel">
+    <div class="callout-grid">
+      <div>
+        <div class="callout-label">Your Biggest Kill</div>
+        <div class="callout-value kill-value" id="biggest-kill-value">—</div>
+        <div class="callout-note" id="biggest-kill-note"></div>
+      </div>
+      <div>
+        <div class="callout-label">Your Biggest Loss</div>
+        <div class="callout-value loss-value" id="biggest-loss-value">—</div>
+        <div class="callout-note" id="biggest-loss-note"></div>
+      </div>
+      <div>
+        <div class="callout-label">Biggest Kill in New Eden</div>
+        <div class="callout-value kill-value" id="global-kill-value">—</div>
+        <div class="callout-note" id="global-kill-note"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="columns">
+  <div>
+    <div class="section-title">Recent Kills<sup class="src-ref"><a href="#src-5">5</a></sup></div>
+    <div class="panel subpanel">
+      <h3>Recent Kills</h3>
+      <div id="kills-list"></div>
+    </div>
+  </div>
+
+  <div>
+    <div class="section-title">Recent Losses<sup class="src-ref"><a href="#src-5">5</a></sup></div>
+    <div class="panel subpanel">
+      <h3>Recent Losses</h3>
+      <div id="losses-list"></div>
+    </div>
+  </div>
+</section>
+
+<div class="zkill-credit">Kill/loss data via <a href="https://zkillboard.com" target="_blank" rel="noopener">zKillboard.com</a> (community site, not CCP's own API)</div>
+
+</div>
+
+<div class="dash-tab-panel" id="tab-plans">
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="tips-skills"></div>
+</section>
+
+<section>
+  <div class="section-title">Skills<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div class="panel subpanel">
+    <h3>Currently Training</h3>
+    <div id="training-block"></div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">Browse Skill Groups<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div class="panel">
+    <div class="topbar-controls" style="margin-bottom: 16px;">
+      <label for="skill-group-select">Group</label>
+      <select id="skill-group-select"></select>
+    </div>
+    <div class="callout-note" style="margin: -10px 0 16px;">Each box is a skill level 1-5 — light boxes are trained, dark boxes aren't yet. A blue box means that level is queued to train.</div>
+    <div id="skill-group-list"></div>
+  </div>
+</section>
+
+</div>
+
+<div class="dash-tab-panel" id="tab-corp">
+
+<section>
+  <div class="section-title">Tips</div>
+  <div class="panel" id="tips-corp"></div>
+</section>
+
+<section>
+  <div class="section-title">Corporation<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div class="stat-grid">
+    <div class="stat-tile">
+      <div class="stat-label">Corporation</div>
+      <div class="stat-value" id="corp-name" style="font-size:19px;">—</div>
+      <div class="stat-sub" id="corp-founded"></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Alliance</div>
+      <div class="stat-value" id="corp-alliance" style="font-size:19px;">—</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Member Count</div>
+      <div class="stat-value accent" id="corp-members">—</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Tax Rate</div>
+      <div class="stat-value" id="corp-tax">—</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="columns">
+    <div>
+      <div class="section-title">Home Base<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+      <div class="panel subpanel">
+        <div id="corp-home-block"></div>
+      </div>
+    </div>
+    <div>
+      <div class="section-title">War Status<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+      <div class="panel subpanel">
+        <div id="corp-war-block"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">Structures &amp; Upcoming Fuel</div>
+  <div class="panel subpanel">
+    <div id="corp-structures-block"></div>
+  </div>
+</section>
+
+</div>
+
+<section class="sources-section" id="sources">
+  <div class="section-title">Data Sources</div>
+  <ol class="sources-list">
+    <li id="src-1"><a href="https://esi.evetech.net/ui/" target="_blank" rel="noopener">ESI</a> — CCP's official EVE Swagger Interface: character wallet, skills, location, blueprints, assets, industry jobs, skill queue, and corporation/alliance data.</li>
+    <li id="src-2"><a href="https://esi.evetech.net/ui/" target="_blank" rel="noopener">ESI market average price</a> — the <code>/markets/prices/</code> endpoint, a server-wide average, not specific to any one region.</li>
+    <li id="src-3"><a href="https://esi.evetech.net/ui/" target="_blank" rel="noopener">ESI Jita order book</a> — live buy/sell orders in The Forge region at snapshot time, via <code>/markets/{region_id}/orders/</code>.</li>
+    <li id="src-4"><a href="https://www.eveonline.com/news/view/plex-changes-on-the-way" target="_blank" rel="noopener">CCP's PLEX restructuring announcement</a> — the official source establishing 500 PLEX = 30 days of Omega. Fixed by CCP, not fetched live.</li>
+    <li id="src-5"><a href="https://zkillboard.com" target="_blank" rel="noopener">zKillboard.com</a> — a community-run killmail tracker, not CCP's own data.</li>
+    <li id="src-6">Manually entered by you — not sourced from any API (see the note under "Your PLEX Position").</li>
+  </ol>
+</section>
+
+</div>
+
+<footer>
+  <span>New Eden Terminal v1.0</span>
+  <span>Source: ESI (esi.evetech.net) via local Python fetch</span>
+</footer>
+
+<div class="footer-link"><button type="button" id="open-console-btn">Command terminal</button></div>
+
+<script>
+let DATA = null;
+let dataTimestamp = null;
+let dataIsCached = false;
+
+function formatIsk(v, decimals) {
+  const abs = Math.abs(v);
+  const d = decimals === undefined ? 2 : decimals;
+  if (abs >= 1e9) return (v / 1e9).toFixed(d) + "B";
+  if (abs >= 1e6) return (v / 1e6).toFixed(d) + "M";
+  if (abs >= 1e3) return (v / 1e3).toFixed(d) + "K";
+  return v.toFixed(0);
+}
+
+const ROMAN = {0: "–", 1: "I", 2: "II", 3: "III", 4: "IV", 5: "V"};
+
+function escapeAttr(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+const ACTIVITY_NAMES = {
+  1: "Manufacturing", 3: "Time Efficiency Research",
+  4: "Material Efficiency Research", 5: "Copying",
+  8: "Invention", 9: "Reaction",
+};
+
+// EVE's client rounds security status to 1 decimal for both display and the
+// highsec/lowsec/nullsec cutoff — a raw 0.4744 shows as "0.5" and counts as
+// highsec, not lowsec. Classify off the rounded value, not the raw one.
+function roundSec(sec) { return Math.round(sec * 10) / 10; }
+function secClass(sec) {
+  const r = roundSec(sec);
+  if (r >= 0.5) return "highsec";
+  if (r > 0.0) return "lowsec";
+  return "nullsec";
+}
+function secLabel(sec) {
+  const r = roundSec(sec);
+  if (r >= 0.5) return "HIGHSEC";
+  if (r > 0.0) return "LOWSEC";
+  return "NULLSEC";
+}
+
+function render() {
+  document.getElementById("char-name").textContent = DATA.character.name;
+  document.getElementById("char-id").textContent = DATA.corporation.name + " [" + DATA.corporation.ticker + "]";
+  const portraitEl = document.getElementById("portrait");
+  if (DATA.character.portrait_data_uri) {
+    portraitEl.src = DATA.character.portrait_data_uri;
+    portraitEl.style.display = "";
+  } else {
+    portraitEl.style.display = "none";
+  }
+  const ts = dataTimestamp || new Date();
+  document.getElementById("refresh-time").textContent =
+    ts.toISOString().slice(0, 16).replace("T", " ") + " UTC" + (dataIsCached ? " (cached)" : "");
+
+  const perms = DATA.permissions || {};
+  document.getElementById("overview-permissions").innerHTML =
+    [perms.wallet, perms.location, perms.skills].map(sectionBannerHtml).join("");
+
+  document.getElementById("stat-wallet").textContent = formatIsk(DATA.wallet_isk) + " ISK";
+
+  const netIsk = DATA.net_isk;
+  document.getElementById("net-isk-window").textContent = netIsk.window_days + "d";
+  const netEl = document.getElementById("stat-net-isk");
+  const netSign = netIsk.net_isk >= 0 ? "+" : "−";
+  netEl.textContent = netSign + formatIsk(Math.abs(netIsk.net_isk)) + " ISK";
+  netEl.className = "stat-value " + (netIsk.net_isk >= 0 ? "positive" : "negative");
+  document.getElementById("stat-net-isk-detail").textContent =
+    "earned " + formatIsk(netIsk.earned) + " · spent " + formatIsk(netIsk.spent);
+
+  document.getElementById("stat-system").textContent = DATA.location.system_name;
+  const sec = DATA.location.security_status;
+  const pill = document.getElementById("stat-sec-pill");
+  pill.textContent = secLabel(sec) + " · " + roundSec(sec).toFixed(1);
+  pill.className = "sec-pill " + secClass(sec);
+
+  document.getElementById("stat-sp").textContent = formatIsk(DATA.skills.total_sp, 2) + " SP";
+  document.getElementById("stat-skills-trained").textContent = DATA.skills.skills_trained + " skills trained";
+
+  const TIP_TABS = [
+    ["Mining", "MINING", "tips-mining"],
+    ["Industry", "INDUSTRY", "tips-industry"],
+    ["PVP", "PVP", "tips-pvpve"],
+    ["Skills", "SKILLS", "tips-skills"],
+    ["Corporation", "CORP", "tips-corp"],
+  ];
+  const overviewTipsHtml = TIP_TABS.map(([cat, label]) => {
+    const list = (DATA.tips && DATA.tips[cat]) || [];
+    const tip = list[0] || { text: "No tips available.", why: "" };
+    return tipBoxHtml(tip, label);
+  }).join("");
+  document.getElementById("overview-tips").innerHTML = overviewTipsHtml;
+  TIP_TABS.forEach(([cat, , containerId]) => {
+    renderTipList(containerId, (DATA.tips && DATA.tips[cat]) || []);
+  });
+
+  // blueprints
+  const bpTable = document.getElementById("bp-table");
+  bpTable.innerHTML = "";
+  if (perms.blueprints && perms.blueprints.available === false) {
+    bpTable.innerHTML = `<tr><td colspan="5">${sectionBannerHtml(perms.blueprints)}</td></tr>`;
+  } else {
+    DATA.blueprints.rows.forEach(bp => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${bp.name}</td>
+        <td><span class="kind-badge">${bp.kind}</span></td>
+        <td class="num">${bp.material_efficiency}</td>
+        <td class="num">${bp.time_efficiency}</td>
+        <td class="num">${bp.runs === -1 ? "∞" : bp.runs}</td>`;
+      bpTable.appendChild(tr);
+    });
+  }
+
+  // assets
+  const assetsBlock = document.getElementById("assets-block");
+  const assets = DATA.assets;
+  if (perms.assets && perms.assets.available === false) {
+    assetsBlock.innerHTML = sectionBannerHtml(perms.assets);
+  } else if (!assets || assets.total_items === 0) {
+    assetsBlock.innerHTML = '<div class="stat-sub">No assets found.</div>';
+  } else {
+    const summary = document.createElement("div");
+    summary.className = "asset-summary-row";
+    summary.innerHTML = `<span>Total items: <b>${assets.total_items.toLocaleString("en-US")}</b></span>
+      <span>Locations: <b>${assets.distinct_locations}</b></span>`;
+    assetsBlock.appendChild(summary);
+    assets.top_items.forEach(item => {
+      const row = document.createElement("div");
+      row.className = "item-row";
+      row.innerHTML = `<span>${item.name}</span><span class="qty">×${item.quantity.toLocaleString("en-US")}</span>`;
+      assetsBlock.appendChild(row);
+    });
+  }
+
+  // planetary interaction — placeholder until esi-planets.manage_planets.v1 is authorized
+  document.getElementById("pi-block").innerHTML = `
+    <div class="pi-placeholder">
+      No colony data yet — this needs the <span class="pi-scope">esi-planets.manage_planets.v1</span>
+      scope, which isn't authorized on the app yet. Once that's enabled and you re-log in,
+      this panel will show active colonies, extractor status, and upcoming expiry times.
+    </div>`;
+
+  // currently training
+  const trainingBlock = document.getElementById("training-block");
+  const t = DATA.current_training;
+  if (perms.skillqueue && perms.skillqueue.available === false) {
+    trainingBlock.innerHTML = sectionBannerHtml(perms.skillqueue);
+  } else if (!t.training) {
+    trainingBlock.innerHTML = t.queue_length > 0
+      ? '<div class="stat-sub">Skill queue is paused — ' + t.queue_length + ' skill(s) queued but not training.</div>'
+      : '<div class="stat-sub">Nothing queued or training right now.</div>';
+  } else {
+    const now = new Date();
+    const start = new Date(t.start_date);
+    const finish = new Date(t.finish_date);
+    const pct = Math.min(100, Math.max(0, ((now - start) / (finish - start)) * 100));
+    const hoursLeft = Math.max(0, (finish - now) / 36e5);
+    const countdown = hoursLeft >= 24
+      ? Math.floor(hoursLeft / 24) + "d " + Math.floor(hoursLeft % 24) + "h left"
+      : Math.floor(hoursLeft) + "h left";
+    const finishLabel = finish.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) +
+      " " + finish.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+
+    trainingBlock.innerHTML = `
+      <div><span class="training-name">${t.skill_name}</span><span class="training-level">${t.level_roman}</span></div>
+      <div class="progress-track"><div class="progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
+      <div class="training-meta">
+        <span>Est. completion: <span class="num">${finishLabel}</span></span>
+        <span class="num">${countdown}</span>
+      </div>
+      <div class="training-queue-note">${t.queue_length} skill${t.queue_length === 1 ? "" : "s"} in queue</div>`;
+  }
+
+  // skill group browser
+  const groupSelect = document.getElementById("skill-group-select");
+  const skillGroupList = document.getElementById("skill-group-list");
+  if (perms.skills && perms.skills.available === false) {
+    groupSelect.innerHTML = "";
+    skillGroupList.innerHTML = sectionBannerHtml(perms.skills);
+  } else {
+    const previousGroup = groupSelect.value;
+    const groupNames = Object.keys(DATA.skill_groups).sort();
+    groupSelect.innerHTML = groupNames.map(g => `<option value="${g}">${g}</option>`).join("");
+    groupSelect.value = groupNames.includes(previousGroup) ? previousGroup : groupNames[0];
+    renderSkillGroup(groupSelect.value);
+  }
+
+  // active jobs
+  const jobsList = document.getElementById("jobs-list");
+  if (perms.active_jobs && perms.active_jobs.available === false) {
+    jobsList.innerHTML = sectionBannerHtml(perms.active_jobs);
+  } else if (DATA.active_jobs.length === 0) {
+    jobsList.innerHTML = '<div class="stat-sub">No active industry jobs.</div>';
+  } else {
+    const now = new Date();
+    DATA.active_jobs.forEach(j => {
+      const end = new Date(j.end_date);
+      const hoursLeft = Math.max(0, (end - now) / 36e5);
+      const countdown = hoursLeft >= 24
+        ? Math.floor(hoursLeft / 24) + "d " + Math.floor(hoursLeft % 24) + "h left"
+        : Math.floor(hoursLeft) + "h left";
+      const priceLabel = j.avg_sell_price ? formatIsk(j.avg_sell_price) + " ISK" : "not tradable";
+      const row = document.createElement("div");
+      row.className = "job-row";
+      row.innerHTML = `
+        <div class="job-name">${j.product}</div>
+        <div class="job-meta">
+          <span>${ACTIVITY_NAMES[j.activity_id] || ("activity " + j.activity_id)}</span>
+          <span class="countdown">${countdown}</span>
+        </div>
+        <div class="job-price">Avg. sell <span class="num">${priceLabel}</span></div>`;
+      jobsList.appendChild(row);
+    });
+  }
+
+  // kills / losses
+  renderKillList("kills-list", DATA.zkill, DATA.zkill.kills, "kill", "No kills recorded.");
+  renderKillList("losses-list", DATA.zkill, DATA.zkill.losses, "loss", "No losses recorded.");
+
+  if (DATA.zkill.available) {
+    renderHighlight("biggest-kill-value", "biggest-kill-note", DATA.zkill.biggest_kill, "No kills recorded.");
+    renderHighlight("biggest-loss-value", "biggest-loss-note", DATA.zkill.biggest_loss, "No losses recorded.");
+  } else {
+    ["biggest-kill", "biggest-loss"].forEach(prefix => {
+      document.getElementById(prefix + "-value").textContent = "—";
+      document.getElementById(prefix + "-note").textContent = "zKillboard unavailable";
+    });
+  }
+
+  const zg = DATA.zkill_global;
+  const globalValueEl = document.getElementById("global-kill-value");
+  const globalNoteEl = document.getElementById("global-kill-note");
+  if (zg.available && zg.biggest) {
+    globalValueEl.textContent = formatIsk(zg.biggest.isk_value) + " ISK";
+    globalNoteEl.innerHTML = `<a href="${zg.biggest.zkill_url}" target="_blank" rel="noopener">${zg.biggest.ship_name}</a> · ${zg.biggest.system_name} · last ${zg.window_minutes}m across New Eden`;
+  } else {
+    globalValueEl.textContent = "—";
+    globalNoteEl.textContent = zg.available ? "No kills in the live feed right now." : "zKillboard unavailable";
+  }
+
+  // mining throughput
+  document.getElementById("mining-permissions").innerHTML = sectionBannerHtml(perms.mining);
+  const m = DATA.mining;
+  document.getElementById("mining_days").value = m.window_days;
+  document.getElementById("mining_days_sales").value = m.window_days;
+  document.getElementById("mine-window").textContent = m.window_days + "d";
+  document.getElementById("mine-active-days").textContent = m.active_days + " active day" + (m.active_days === 1 ? "" : "s");
+  document.getElementById("mine-total").textContent = formatIsk(m.total_isk) + " ISK";
+  document.getElementById("mine-per-day").textContent = formatIsk(m.isk_per_active_day) + " ISK";
+
+  renderChart(m.daily);
+
+  // jita resource prices
+  const jitaTable = document.getElementById("jita-price-table");
+  if (DATA.jita_prices.length === 0) {
+    jitaTable.innerHTML = `<tr><td colspan="3" class="stat-sub">No mined resources to price yet.</td></tr>`;
+  } else {
+    DATA.jita_prices.forEach(p => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${p.name}</td>
+        <td class="num">${p.jita_sell !== null ? p.jita_sell.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " ISK" : "—"}</td>
+        <td class="num">${p.jita_buy !== null ? p.jita_buy.toLocaleString("en-US", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " ISK" : "—"}</td>`;
+      jitaTable.appendChild(tr);
+    });
+  }
+
+  // resource breakdown
+  const mb = DATA.mining_breakdown;
+  document.getElementById("ore-total").textContent = formatIsk(mb.category_totals.Ore) + " ISK";
+  document.getElementById("ice-total").textContent = formatIsk(mb.category_totals.Ice) + " ISK";
+  document.getElementById("gas-total").textContent = formatIsk(mb.category_totals.Gas) + " ISK";
+  document.getElementById("other-total").textContent = formatIsk(mb.category_totals.Other) + " ISK";
+
+  const resourceTable = document.getElementById("resource-table");
+  if (mb.by_type.length === 0) {
+    resourceTable.innerHTML = `<tr><td colspan="4" class="stat-sub">No mining activity in this window.</td></tr>`;
+  } else {
+    mb.by_type.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.name}</td>
+        <td><span class="kind-badge">${r.category}</span></td>
+        <td class="num">${r.quantity.toLocaleString("en-US")}</td>
+        <td class="num">${formatIsk(r.isk_value)} ISK</td>`;
+      resourceTable.appendChild(tr);
+    });
+  }
+
+  // sales throughput
+  document.getElementById("sales-permissions").innerHTML = sectionBannerHtml(perms.sales);
+  const s = DATA.sales;
+  document.getElementById("sales-window").textContent = s.window_days + "d";
+  document.getElementById("sales-active-days").textContent = s.active_days + " active day" + (s.active_days === 1 ? "" : "s");
+  document.getElementById("sales-total").textContent = formatIsk(s.total_isk) + " ISK";
+  document.getElementById("sales-per-day").textContent = formatIsk(s.isk_per_active_day) + " ISK";
+  renderChart(s.daily,
+    { svg: "sales-chart-svg", wrap: "sales-chart-wrap", tooltip: "sales-tooltip", ttDate: "sales-tt-date", ttIsk: "sales-tt-isk" },
+    "sales");
+
+  // plex / omega
+  const plex = DATA.plex;
+  if (plex.available) {
+    document.getElementById("plex-price").textContent = formatIsk(plex.avg_price) + " ISK";
+    document.getElementById("plex-omega-cost").textContent = formatIsk(plex.omega_isk_cost) + " ISK";
+    document.getElementById("plex-omega-note").textContent = plex.omega_plex_cost + " PLEX";
+    initPlexPosition(plex);
+  } else {
+    document.getElementById("plex-price").textContent = "unavailable";
+    document.getElementById("plex-omega-cost").textContent = "—";
+  }
+
+  // corporation overview
+  const co = DATA.corp_overview;
+  document.getElementById("corp-name").textContent = co.membership.name + " [" + co.membership.ticker + "]";
+  document.getElementById("corp-founded").textContent = co.membership.date_founded
+    ? "Founded " + new Date(co.membership.date_founded).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+    : "";
+  document.getElementById("corp-alliance").textContent = co.alliance
+    ? co.alliance.name + " [" + co.alliance.ticker + "]"
+    : "Not in an alliance";
+  document.getElementById("corp-members").textContent = co.membership.member_count.toLocaleString("en-US");
+  document.getElementById("corp-tax").textContent = (co.membership.tax_rate * 100).toFixed(1) + "%";
+
+  const homeBlock = document.getElementById("corp-home-block");
+  homeBlock.innerHTML = co.home.available
+    ? `<div class="stat-value" style="font-size:16px;">${co.home.name}</div>
+       <div class="stat-sub">${co.home.system_name} system</div>`
+    : `<div class="pi-placeholder">Home base couldn't be resolved from ESI — it may be a player-owned
+       structure this login doesn't have docking access to, rather than an NPC station.</div>`;
+
+  const warBlock = document.getElementById("corp-war-block");
+  const warLabel = co.wars.war_eligible ? "War-eligible" : "Not war-eligible";
+  const warClass = co.wars.war_eligible ? "gap" : "ok";
+  warBlock.innerHTML = `
+    <span class="status-pill ${warClass}">${warLabel}</span>
+    <div class="pi-placeholder" style="margin-top:10px;">
+      ESI has no endpoint that lists active wars for a specific corporation or alliance — only a global
+      recent-wars feed you'd have to scan war-by-war for a match. War-eligibility above is the one
+      reliable war signal ESI exposes directly.
+    </div>`;
+
+  const structBlock = document.getElementById("corp-structures-block");
+  if (!co.structures.available) {
+    structBlock.innerHTML = sectionBannerHtml({
+      available: false,
+      reason: `No structure data — this ${co.structures.reason}.`,
+      fixable_by_login: co.structures.fixable_by_login,
+    });
+  } else if (co.structures.structures.length === 0) {
+    structBlock.innerHTML = `<div class="stat-sub">No structures owned by this corporation.</div>`;
+  } else {
+    structBlock.innerHTML = co.structures.structures.map(s => {
+      const fuel = s.fuel_expires
+        ? new Date(s.fuel_expires).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+        : "—";
+      return `<div class="job-row">
+        <div class="job-name">${s.name}</div>
+        <div class="job-meta">
+          <span>${s.system_name || "unknown system"} · ${s.state || "unknown state"}</span>
+          <span class="countdown">Fuel until ${fuel}</span>
+        </div>
+      </div>`;
+    }).join("");
+  }
+}
+
+const PLEX_STORAGE_KEY = "eve-dashboard-plex-vault-owned";
+
+function initPlexPosition(plex) {
+  let stored = null;
+  try {
+    stored = localStorage.getItem(PLEX_STORAGE_KEY);
+  } catch (e) {
+    // storage unavailable (private window, blocked) — fall back silently
+  }
+  const initial = (stored !== null && stored !== "") ? Number(stored) : plex.vault_plex_owned;
+
+  const input = document.getElementById("plex-vault-input");
+  input.value = initial;
+
+  const recalc = () => {
+    const vaultQty = Math.max(0, Math.round(Number(input.value) || 0));
+    try {
+      localStorage.setItem(PLEX_STORAGE_KEY, String(vaultQty));
+    } catch (e) {
+      // ignore — this is a per-viewer convenience only
+    }
+    renderPlexPosition(plex, vaultQty);
+  };
+
+  document.getElementById("plex-recalc-btn").addEventListener("click", recalc);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") recalc(); });
+
+  renderPlexPosition(plex, initial);
+}
+
+function renderPlexPosition(plex, vaultQty) {
+  const ownedQty = plex.loose_owned_qty + vaultQty;
+  const ownedValue = ownedQty * plex.avg_price;
+  const needed = Math.max(0, plex.omega_plex_cost - ownedQty);
+  const purchaseCost = needed * plex.avg_price;
+  const haveEnough = needed === 0;
+
+  document.getElementById("plex-owned").textContent = ownedQty.toLocaleString("en-US") + " PLEX";
+  document.getElementById("plex-owned-value").textContent = "≈ " + formatIsk(ownedValue) + " ISK";
+
+  const neededEl = document.getElementById("plex-needed");
+  neededEl.textContent = needed.toLocaleString("en-US") + " PLEX";
+  neededEl.className = "callout-value" + (haveEnough ? " positive" : "");
+  document.getElementById("plex-needed-note").textContent = haveEnough
+    ? "already have enough"
+    : "to reach " + plex.omega_plex_cost;
+
+  const costEl = document.getElementById("plex-purchase-cost");
+  costEl.textContent = formatIsk(purchaseCost) + " ISK";
+  costEl.className = "callout-value" + (haveEnough ? " positive" : "");
+}
+
+function sectionBannerHtml(perm) {
+  if (!perm || perm.available !== false) return "";
+  const action = perm.fixable_by_login
+    ? `<button type="button" class="section-banner-action">Login via EVE SSO</button>`
+    : "";
+  return `<div class="section-banner">` +
+    `<span class="section-banner-text">${escapeAttr(perm.reason || "This data isn't available right now.")}</span>` +
+    action +
+    `</div>`;
+}
+
+function tipBoxHtml(tip, label) {
+  const labelHtml = label ? `<span class="tip-label">${label}</span>` : "";
+  const why = tip.why ? escapeAttr(tip.why) : "No further detail available for this tip.";
+  return `<div class="tip-box">` +
+    `<span class="tip-icon">&#9733;</span>` +
+    `<span class="tip-body">${labelHtml}${escapeAttr(tip.text)} ` +
+    `<button type="button" class="tip-learn-why">Learn why</button>` +
+    `<div class="tip-why">${why}</div>` +
+    `</span></div>`;
+}
+
+function renderTipList(containerId, tips) {
+  const el = document.getElementById(containerId);
+  if (!tips.length) {
+    el.innerHTML = '<div class="stat-sub">No tips available.</div>';
+    return;
+  }
+  el.innerHTML = tips.map(t => tipBoxHtml(t)).join("");
+}
+
+function renderSkillGroup(groupName) {
+  const el = document.getElementById("skill-group-list");
+  const rows = (DATA.skill_groups && DATA.skill_groups[groupName]) || [];
+  el.innerHTML = rows.map(s => {
+    const pips = [1, 2, 3, 4, 5].map(level => {
+      if (level <= s.trained) return '<span class="pip trained"></span>';
+      if (level <= s.queued) return '<span class="pip queued-pip"></span>';
+      return '<span class="pip"></span>';
+    }).join("");
+    return `<div class="skill-group-row"><span>${escapeAttr(s.name)}</span><span class="skill-track">${pips}</span></div>`;
+  }).join("");
+}
+
+function renderHighlight(valueId, noteId, entry, emptyLabel) {
+  const valueEl = document.getElementById(valueId);
+  const noteEl = document.getElementById(noteId);
+  if (!entry) {
+    valueEl.textContent = "—";
+    noteEl.textContent = emptyLabel;
+    return;
+  }
+  valueEl.textContent = formatIsk(entry.isk_value) + " ISK";
+  const dateLabel = new Date(entry.date).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  noteEl.innerHTML = `<a href="${entry.zkill_url}" target="_blank" rel="noopener">${entry.ship_name}</a> · ${entry.system_name} · ${dateLabel}`;
+}
+
+function renderKillList(elId, zkill, rows, kind, emptyLabel) {
+  const el = document.getElementById(elId);
+  if (!zkill.available) {
+    el.innerHTML = '<div class="stat-sub">zKillboard is unavailable right now — try refreshing the snapshot later.</div>';
+    return;
+  }
+  if (rows.length === 0) {
+    el.innerHTML = `<div class="stat-sub">${emptyLabel}</div>`;
+    return;
+  }
+  rows.forEach(r => {
+    const dateObj = new Date(r.date);
+    const dateLabel = dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    const tags = [];
+    if (r.solo) tags.push('<span class="kill-tag solo">SOLO</span>');
+    if (r.npc) tags.push('<span class="kill-tag">NPC</span>');
+    if (kind === "kill" && r.final_blow_by_us) tags.push('<span class="kill-tag">FINAL BLOW</span>');
+    tags.push(`<span class="kill-tag">${r.attacker_count} attacker${r.attacker_count === 1 ? "" : "s"}</span>`);
+
+    const row = document.createElement("div");
+    row.className = "job-row kill-row";
+    row.innerHTML = `
+      <div class="job-name"><a href="${r.zkill_url}" target="_blank" rel="noopener">${r.ship_name}</a></div>
+      <div class="job-meta">
+        <span>${r.system_name} · ${dateLabel}</span>
+        <span class="countdown ${kind === "kill" ? "kill-value" : "loss-value"}">${formatIsk(r.isk_value)} ISK</span>
+      </div>
+      <div class="job-price">${tags.join("")}</div>`;
+    el.appendChild(row);
+  });
+}
+
+function renderChart(daily, ids, emptyLabel) {
+  ids = ids || { svg: "chart-svg", wrap: "chart-wrap", tooltip: "tooltip", ttDate: "tt-date", ttIsk: "tt-isk" };
+  const svg = document.getElementById(ids.svg);
+  const tooltip = document.getElementById(ids.tooltip);
+  const ttDate = document.getElementById(ids.ttDate);
+  const ttIsk = document.getElementById(ids.ttIsk);
+  if (!daily.length) {
+    svg.outerHTML = `<div class="stat-sub">No daily ${emptyLabel || "mining"} data in this window.</div>`;
+    return;
+  }
+
+  const W = 760, H = 200, padBottom = 24, padTop = 10;
+  const plotH = H - padBottom - padTop;
+  const max = Math.max(...daily.map(d => d.isk));
+  const peakIdx = daily.reduce((best, d, i) => d.isk > daily[best].isk ? i : best, 0);
+  const barW = W / daily.length;
+  const gap = Math.min(14, barW * 0.28);
+
+  const ns = "http://www.w3.org/2000/svg";
+  [0.25, 0.5, 0.75].forEach(frac => {
+    const y = padTop + plotH * (1 - frac);
+    const line = document.createElementNS(ns, "line");
+    line.setAttribute("x1", 0); line.setAttribute("x2", W);
+    line.setAttribute("y1", y); line.setAttribute("y2", y);
+    line.setAttribute("class", "gridline");
+    svg.appendChild(line);
+  });
+
+  daily.forEach((d, i) => {
+    const h = max > 0 ? (d.isk / max) * plotH : 0;
+    const x = i * barW + gap / 2;
+    const w = barW - gap;
+    const y = padTop + plotH - h;
+
+    const rect = document.createElementNS(ns, "rect");
+    rect.setAttribute("x", x);
+    rect.setAttribute("y", y);
+    rect.setAttribute("width", w);
+    rect.setAttribute("height", Math.max(h, 2));
+    rect.setAttribute("rx", 4);
+    rect.setAttribute("fill", i === peakIdx ? "var(--accent)" : "var(--accent-dim)");
+    rect.setAttribute("class", "bar");
+    rect.addEventListener("mouseenter", () => {
+      rect.style.opacity = 0.8;
+      const dateObj = new Date(d.date + "T00:00:00Z");
+      ttDate.textContent = dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      ttIsk.textContent = formatIsk(d.isk) + " ISK";
+      const rectBox = rect.getBoundingClientRect();
+      const wrapBox = document.getElementById(ids.wrap).getBoundingClientRect();
+      tooltip.style.left = (rectBox.left - wrapBox.left + rectBox.width / 2) + "px";
+      tooltip.style.top = (rectBox.top - wrapBox.top - 8) + "px";
+      tooltip.style.opacity = 1;
+    });
+    rect.addEventListener("mouseleave", () => {
+      rect.style.opacity = 1;
+      tooltip.style.opacity = 0;
+    });
+    svg.appendChild(rect);
+
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", x + w / 2);
+    label.setAttribute("y", H - 6);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("class", "bar-label");
+    const dObj = new Date(d.date + "T00:00:00Z");
+    label.textContent = dObj.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    svg.appendChild(label);
+  });
+}
+
+const DASH_TAB_STORAGE_KEY = "eve-dashboard-active-tab";
+
+function initTabs() {
+  const buttons = Array.from(document.querySelectorAll(".dash-tab-btn"));
+  const panels = Array.from(document.querySelectorAll(".dash-tab-panel"));
+  const validTabs = buttons.map(b => b.dataset.tab);
+
+  let stored = null;
+  try {
+    stored = localStorage.getItem(DASH_TAB_STORAGE_KEY);
+  } catch (e) {
+    // storage unavailable — fall back silently
+  }
+  const initial = (stored && validTabs.includes(stored)) ? stored : validTabs[0];
+
+  function activate(tab) {
+    buttons.forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+    panels.forEach(p => p.classList.toggle("active", p.id === "tab-" + tab));
+  }
+
+  buttons.forEach(b => {
+    b.addEventListener("click", () => {
+      activate(b.dataset.tab);
+      try {
+        localStorage.setItem(DASH_TAB_STORAGE_KEY, b.dataset.tab);
+      } catch (e) {
+        // ignore — per-viewer convenience only
+      }
+    });
+  });
+
+  activate(initial);
+}
+
+
+
+const DASHBOARD_CACHE_KEY = "eve-dashboard-cached-data";
+const DASHBOARD_CACHE_TIME_KEY = "eve-dashboard-cached-time";
+
+function saveDashboardCache(data, timestamp) {
+  try {
+    localStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(DASHBOARD_CACHE_TIME_KEY, timestamp.toISOString());
+  } catch (e) {
+    // storage unavailable (private window, quota, blocked) — cache is a
+    // convenience only, skip it silently
+  }
+}
+
+function clearDashboardCache() {
+  try {
+    localStorage.removeItem(DASHBOARD_CACHE_KEY);
+    localStorage.removeItem(DASHBOARD_CACHE_TIME_KEY);
+  } catch (e) {
+    // storage unavailable — nothing to clear
+  }
+}
+
+function loadDashboardCache() {
+  try {
+    const raw = localStorage.getItem(DASHBOARD_CACHE_KEY);
+    const ts = localStorage.getItem(DASHBOARD_CACHE_TIME_KEY);
+    if (!raw || !ts) return false;
+    DATA = JSON.parse(raw);
+    dataTimestamp = new Date(ts);
+    dataIsCached = true;
+    render();
+    document.getElementById("content").className = "show";
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+let isLoadingDashboard = false;
+
+function isLoginError(errorText) {
+  return /login|401|missing a required scope/i.test(errorText || "");
+}
+
+async function loadDashboard() {
+  if (isLoadingDashboard) {
+    showBanner("A refresh is already in progress — please wait for it to finish.", false);
+    return;
+  }
+  isLoadingDashboard = true;
+  const refreshBtns = [
+    document.getElementById("refresh-btn"),
+    document.getElementById("mining-refresh-btn"),
+    document.getElementById("sales-refresh-btn"),
+  ];
+  const daysSelects = [document.getElementById("mining_days"), document.getElementById("mining_days_sales")];
+  refreshBtns.forEach(b => { b.disabled = true; b.textContent = "Loading…"; });
+  daysSelects.forEach(s => s.disabled = true);
+  hideBanner();
+  showLoading("Loading live dashboard data — this can take up to 90 seconds.");
+  document.getElementById("content").classList.add("refreshing");
+
+  const days = daysSelects[0].value || 7;
+  const qs = new URLSearchParams({ mining_days: days });
+  const maxAttempts = 3;
+  const fetchTimeoutMs = 100000; // just past the "up to 90 seconds" told to the user
+  let lastError = null;
+
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        if (attempt > 1) {
+          showLoading(`Retrying (${attempt}/${maxAttempts})…`);
+        }
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), fetchTimeoutMs);
+        let res;
+        try {
+          res = await fetch(`/api/dashboard?${qs.toString()}`, { signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+        const payload = await res.json();
+        if (!payload.ok) {
+          document.getElementById("content").className = "";
+          const error = payload.error || "Failed to load dashboard.";
+          if (isLoginError(error)) {
+            showBanner(error, true, {
+              label: "Login via EVE SSO",
+              onClick: () => document.getElementById("login-btn").click(),
+            });
+          } else {
+            showBanner(error, true, { label: "Retry", onClick: loadDashboard });
+          }
+          return;
+        }
+        DATA = payload.data;
+        dataTimestamp = new Date();
+        dataIsCached = false;
+        render();
+        document.getElementById("content").className = "show";
+        saveDashboardCache(DATA, dataTimestamp);
+        return;
+      } catch (e) {
+        lastError = e;
+        const timedOut = e.name === "AbortError";
+        if (attempt < maxAttempts) {
+          const delaySeconds = attempt === 1 ? 3 : 6;
+          const failureLabel = timedOut
+            ? `No response after ${fetchTimeoutMs / 1000}s`
+            : "Couldn't reach the local server";
+          showLoading(`${failureLabel} — retrying in ${delaySeconds}s (attempt ${attempt + 1}/${maxAttempts})…`);
+          await new Promise(r => setTimeout(r, delaySeconds * 1000));
+        }
+      }
+    }
+    document.getElementById("content").className = "";
+    const timedOut = lastError && lastError.name === "AbortError";
+    const failureText = timedOut
+      ? `Still no response after ${maxAttempts} attempts (each waited ${fetchTimeoutMs / 1000}s). The server may be stuck — check it's still running, then retry.`
+      : `Couldn't reach the local server after ${maxAttempts} attempts: ${lastError}. Make sure the app/server is still running, then retry.`;
+    showBanner(failureText, true, { label: "Retry", onClick: loadDashboard });
+  } finally {
+    hideLoading();
+    document.getElementById("content").classList.remove("refreshing");
+    refreshBtns.forEach(b => { b.disabled = false; b.textContent = "Refresh"; });
+    daysSelects.forEach(s => s.disabled = false);
+    isLoadingDashboard = false;
+  }
+}
+
+function showBanner(text, isError, action) {
+  const b = document.getElementById("banner");
+  b.innerHTML = "";
+  const textEl = document.createElement("span");
+  textEl.className = "banner-text";
+  textEl.textContent = text;
+  b.appendChild(textEl);
+  if (action) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "banner-action";
+    btn.textContent = action.label;
+    btn.addEventListener("click", action.onClick);
+    b.appendChild(btn);
+  }
+  b.className = "show" + (isError ? " error" : "");
+}
+function hideBanner() {
+  document.getElementById("banner").className = "";
+}
+
+function showLoading(text) {
+  document.getElementById("loading-text").textContent = text;
+  document.getElementById("loading").className = "show";
+}
+function hideLoading() {
+  document.getElementById("loading").className = "";
+}
+
+document.getElementById("refresh-btn").addEventListener("click", loadDashboard);
+document.getElementById("mining-refresh-btn").addEventListener("click", loadDashboard);
+document.getElementById("sales-refresh-btn").addEventListener("click", loadDashboard);
+
+// the Mining and Sales windows are the same value under the hood (one
+// fetch produces both) — keep the two dropdowns showing it in sync
+document.getElementById("mining_days").addEventListener("change", e => {
+  document.getElementById("mining_days_sales").value = e.target.value;
+});
+document.getElementById("mining_days_sales").addEventListener("change", e => {
+  document.getElementById("mining_days").value = e.target.value;
+});
+
+document.getElementById("skill-group-select").addEventListener("change", e => {
+  renderSkillGroup(e.target.value);
+});
+
+document.addEventListener("click", e => {
+  const whyBtn = e.target.closest(".tip-learn-why");
+  if (whyBtn) {
+    const box = whyBtn.closest(".tip-box");
+    box.classList.toggle("expanded");
+    whyBtn.textContent = box.classList.contains("expanded") ? "Hide why" : "Learn why";
+    return;
+  }
+  const loginBtn = e.target.closest(".section-banner-action");
+  if (loginBtn) {
+    document.getElementById("login-btn").click();
+  }
+});
+
+
+let isLoggedIn = false;
+
+function setRefreshButtonsEnabled(enabled) {
+  [
+    document.getElementById("refresh-btn"),
+    document.getElementById("mining-refresh-btn"),
+    document.getElementById("sales-refresh-btn"),
+  ].forEach(b => { b.disabled = !enabled; });
+}
+
+async function refreshStatus(isRetry) {
+  try {
+    const res = await fetch("/api/status");
+    const data = await res.json();
+    const el = document.getElementById("login-status");
+    const loginBtn = document.getElementById("login-btn");
+    isLoggedIn = data.logged_in;
+    if (data.logged_in) {
+      el.textContent = "● LOGGED IN";
+      el.className = "logged-in";
+      loginBtn.textContent = "Logout";
+      setRefreshButtonsEnabled(true);
+      // Paint instantly from cache if there is one (no blank screen while
+      // waiting), but ALWAYS follow it with a real fetch — a cache hit
+      // used to skip the fetch entirely, which meant login/page-load
+      // could silently show stale tips (computed under old logic, or
+      // just old activity data) with no actual check ever happening.
+      // loadDashboard() layers its "refreshing" pulse on top of the
+      // cached content rather than blanking it, so this doesn't
+      // reintroduce the old spinner-on-every-load wait.
+      loadDashboardCache();
+      loadDashboard();
+    } else {
+      el.textContent = "● NOT LOGGED IN";
+      el.className = "";
+      loginBtn.textContent = "Login via EVE SSO";
+      setRefreshButtonsEnabled(false);
+      showBanner('Not logged in — click "Login via EVE SSO" to load your dashboard.', false);
+    }
+  } catch (e) {
+    if (!isRetry) {
+      await new Promise(r => setTimeout(r, 2000));
+      return refreshStatus(true);
+    }
+    showBanner(`Status check failed: ${e}`, true, { label: "Retry", onClick: () => refreshStatus(false) });
+  }
+}
+
+document.getElementById("login-btn").addEventListener("click", async () => {
+  const el = document.getElementById("login-status");
+  if (isLoggedIn) {
+    el.textContent = "● LOGGING OUT…";
+    el.className = "logging-in";
+    try {
+      await fetch("/api/logout", { method: "POST" });
+    } catch (e) {
+      showBanner(`Logout request failed: ${e}`, true);
+    }
+    document.getElementById("content").className = "";
+    clearDashboardCache();
+    refreshStatus();
+    return;
+  }
+  el.textContent = "● LOGGING IN…";
+  el.className = "logging-in";
+  showBanner("Opening browser for EVE SSO login...", false);
+  try {
+    const res = await fetch("/api/login", { method: "POST" });
+    const data = await res.json();
+    if (data.error) { showBanner(data.error, true); }
+  } catch (e) {
+    showBanner(`Login request failed: ${e}`, true);
+  }
+  refreshStatus();
+});
+
+document.getElementById("open-console-btn").addEventListener("click", async (e) => {
+  const btn = e.target;
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = "Opening console…";
+  try {
+    const res = await fetch("/api/open-console", { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) {
+      showBanner(data.error || "Couldn't open the console window.", true);
+    }
+  } catch (e) {
+    showBanner(`Couldn't open the console window: ${e}`, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+});
+
+initTabs();
+refreshStatus();
+</script>
+</body>
+</html>
