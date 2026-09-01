@@ -11,7 +11,7 @@ plus a few standalone reports:
 - **Combined dashboard** — one view of all of the above, plus mining throughput and ISK/hour, loaded concurrently so a full refresh takes seconds rather than the sum of every section fetched one at a time
 - **Skill group browser** — pick any of EVE's own ~21 real skill groups (Drones, Gunnery, Navigation, Spaceship Command, ...) from a dropdown and see every skill in it as a row of 5 pips — light for trained, dark for untrained — the same shape as the in-game Character Sheet
 - **Mining ISK report** — pulls the corp mining ledger, prices it against Jita market averages, outputs an HTML report
-- **Tips** — every tab (Mining, Industry, PVP, Skills, Corporation) gets a handful of concrete, computed tips, with an Overview summary pulling the top one from each, and a "Learn why" on each one that expands to the real reasoning: skill-training suggestions grounded in your own recent activity (do you actually mine what this skill boosts, do you have an active job it applies to), ship-eligibility checks with real ship-to-ship stat comparisons, PVP skill tips that compute a real before/after number on your current ship's hull stats, and Industry tips comparing your own open market orders against the live regional order book (no external calls, no API key)
+- **Tips** — every tab (Mining, Industry, PVP, Mission Running, Skills, Corporation) gets a handful of concrete, computed tips, with an Overview summary pulling the top one from each, and a "Learn why" on each one that expands to the real reasoning: skill-training suggestions grounded in your own recent activity (do you actually mine what this skill boosts, do you have an active job it applies to, real mission-reward/bounty ISK from your wallet journal), ship-eligibility checks with real ship-to-ship stat comparisons, real fitted-gear awareness (tips cite the actual modules and drones fitted on your current ship, not just its hull), real ship-hull skill bonuses (e.g. Mining Barge/Exhumers/racial ship skills — resolved from live ESI dogma data, not guessed, since these bonuses often aren't stated in the skill's own description text), the real "Magic 14" skills that improve every ship you fly, PVP skill tips that compute a real before/after number on your current ship's hull stats, and Industry tips comparing your own open market orders against the live regional order book (no external calls, no API key)
 - **Missing-permission banners** — if your saved login is missing a scope some section needs, that one section shows what's missing and how to fix it instead of the whole dashboard failing to load
 - **Historical logging** — a local SQLite database that accumulates market prices and mining ledger entries over time (ESI's own history windows are short)
 - **zKillboard integration** — recent kills/losses and simple stats for a character
@@ -100,6 +100,11 @@ python eve_esi_terminal.py mining-skills
 ```
 
 ## Windows: no-install .exe
+
+**A pre-built `.exe` is attached to the
+[latest release](https://github.com/TorontoDorsa/EVE-Online---New-Eden-Terminal/releases/latest)** —
+download it and skip the "Building it yourself" section below entirely
+unless you want to build from source yourself.
 
 For sharing with people who don't have Python installed, the desktop
 app can be packaged into a single portable `New-Eden-Terminal.exe` —
