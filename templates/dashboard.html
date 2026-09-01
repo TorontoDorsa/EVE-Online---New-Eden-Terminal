@@ -915,6 +915,7 @@
   <button class="dash-tab-btn" data-tab="mining">Mining</button>
   <button class="dash-tab-btn" data-tab="industry">Industry</button>
   <button class="dash-tab-btn" data-tab="pvpve">PVP</button>
+  <button class="dash-tab-btn" data-tab="missions">Mission Running</button>
   <button class="dash-tab-btn" data-tab="plans">Skills</button>
   <button class="dash-tab-btn" data-tab="corp">Corporation</button>
 </nav>
@@ -1242,6 +1243,41 @@
 
 </div>
 
+<div class="dash-tab-panel" id="tab-missions">
+
+<section>
+  <div class="section-title">Current State<sup class="src-ref"><a href="#src-1">1</a></sup></div>
+  <div id="missions-permissions" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
+  <div class="stat-grid" id="missions-stat-grid">
+    <div class="stat-tile">
+      <div class="stat-label">Mission Reward ISK (<span id="mission-window"></span>)</div>
+      <div class="stat-value accent" id="stat-mission-isk">—</div>
+      <div class="stat-sub" id="stat-mission-count"></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Avg ISK per Mission</div>
+      <div class="stat-value" id="stat-mission-avg">—</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">NPC Bounty ISK (<span id="bounty-window"></span>)</div>
+      <div class="stat-value" id="stat-bounty-isk">—</div>
+      <div class="stat-sub" id="stat-bounty-count"></div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-label">Combined PvE Income</div>
+      <div class="stat-value" id="stat-mission-combined">—</div>
+      <div class="stat-sub">missions + bounties, same window</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="section-title">What's Next</div>
+  <div class="panel" id="tips-missions"></div>
+</section>
+
+</div>
+
 <div class="dash-tab-panel" id="tab-plans">
 
 <section>
@@ -1433,10 +1469,30 @@ function render() {
   document.getElementById("stat-sp").textContent = formatIsk(DATA.skills.total_sp, 2) + " SP";
   document.getElementById("stat-skills-trained").textContent = DATA.skills.skills_trained + " skills trained";
 
+  document.getElementById("missions-permissions").innerHTML =
+    [perms.mission_running].map(sectionBannerHtml).join("");
+  const missionGrid = document.getElementById("missions-stat-grid");
+  if (perms.mission_running && perms.mission_running.available === false) {
+    missionGrid.style.display = "none";
+  } else {
+    missionGrid.style.display = "";
+    const mr = DATA.mission_running;
+    document.getElementById("mission-window").textContent = mr.window_days + "d";
+    document.getElementById("bounty-window").textContent = mr.window_days + "d";
+    document.getElementById("stat-mission-isk").textContent = formatIsk(mr.mission_isk) + " ISK";
+    document.getElementById("stat-mission-count").textContent = mr.mission_count + " mission reward(s)";
+    document.getElementById("stat-bounty-isk").textContent = formatIsk(mr.bounty_isk) + " ISK";
+    document.getElementById("stat-bounty-count").textContent = mr.bounty_count + " bounty prize(s)";
+    const avg = mr.mission_count > 0 ? mr.mission_isk / mr.mission_count : 0;
+    document.getElementById("stat-mission-avg").textContent = formatIsk(avg) + " ISK";
+    document.getElementById("stat-mission-combined").textContent = formatIsk(mr.mission_isk + mr.bounty_isk) + " ISK";
+  }
+
   const TIP_TABS = [
     ["Mining", "MINING", "tips-mining"],
     ["Industry", "INDUSTRY", "tips-industry"],
     ["PVP", "PVP", "tips-pvpve"],
+    ["Mission Running", "MISSIONS", "tips-missions"],
     ["Skills", "SKILLS", "tips-skills"],
     ["Corporation", "CORP", "tips-corp"],
   ];

@@ -1171,7 +1171,7 @@ def _pvp_context(profile, ship, pvp_rows):
     return context
 
 
-_SKILLS_TAB_CATEGORIES = ("Quality of Life", "Mission Running", "Exploration")
+_SKILLS_TAB_CATEGORIES = ("Quality of Life", "Exploration")
 
 
 def _skills_theme_context(profile):
@@ -1420,7 +1420,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
                 ),
                 ship, ship_data.PVP_SHIPS, skill_plans["PVP"],
             )
-            mission_context = _mission_context(profile)
+            mission_context = _apply_fit_relevance(_apply_magic14_framing(_mission_context(profile)), profile)
             theme_context = _skills_theme_context(profile)
 
             mining_skill_tips = skill_plan.rank_skill_tips(
@@ -1432,20 +1432,32 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             pvp_skill_tips = skill_plan.rank_skill_tips(
                 skill_plans["PVP"], category_label="PVP", context=pvp_context
             )
-            skills_tab_rows = (
-                skill_plans["Quality of Life"] + skill_plans["Mission Running"] + skill_plans["Exploration"]
+            mission_skill_tips = skill_plan.rank_skill_tips(
+                skill_plans["Mission Running"], category_label="Mission Running", context=mission_context
             )
+            skills_tab_rows = skill_plans["Quality of Life"] + skill_plans["Exploration"]
             skills_tab_tips = skill_plan.rank_skill_tips(
                 skills_tab_rows, category_label="Skills",
-                context=_apply_magic14_framing({**theme_context, **mission_context}),
+                context=_apply_magic14_framing(theme_context),
             )
             fit_completeness_tips = _fit_completeness_tips(
                 fit_data, trained_skills, ship.get("ship_name") or "your ship"
             )
+            mission_running_stats = {
+                "mission_isk": profile["mission_activity"]["mission_isk"],
+                "mission_count": profile["mission_activity"]["mission_count"],
+                "bounty_isk": profile["mission_activity"]["bounty_isk"],
+                "bounty_count": profile["mission_activity"]["bounty_count"],
+                "window_days": mining_days,
+            }
         else:
             unavailable_tip = [{"text": "Skill-based tips aren't available right now.", "why": skills_perm["reason"]}]
-            mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = unavailable_tip
+            mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = mission_skill_tips = unavailable_tip
             fit_completeness_tips = []
+            mission_running_stats = {
+                "mission_isk": 0, "mission_count": 0, "bounty_isk": 0, "bounty_count": 0,
+                "window_days": mining_days,
+            }
 
         tips = {
             "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
@@ -1453,6 +1465,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             ),
             "Industry": industry_skill_tips + market_order_tips,
             "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ship_data.PVP_SHIPS, limit=2),
+            "Mission Running": mission_skill_tips,
             "Skills": skills_tab_tips + fit_completeness_tips,
             "Corporation": get_corp_tips(corp_overview_data),
         }
@@ -1488,6 +1501,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
     # whole section shows a banner, so combine with "or" per shared scope.
     permissions = {
         "wallet": wallet_perm if not wallet_perm["available"] else net_isk_perm,
+        "mission_running": wallet_perm if not wallet_perm["available"] else net_isk_perm,
         "location": location_perm,
         "skills": skills_perm if not skills_perm["available"] else skills_summary_perm,
         "skillqueue": current_training_perm,
@@ -1509,6 +1523,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         "permissions": permissions,
         "wallet_isk": wallet_isk,
         "net_isk": net_isk,
+        "mission_running": mission_running_stats,
         "location": location,
         "ship": ship,
         "skills": skills_summary,
