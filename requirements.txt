@@ -3,3 +3,4 @@ requests
 truststore
 pywebview
 pythonnet
+pystray

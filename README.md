@@ -29,12 +29,11 @@ Character/corp-specific commands authenticate via EVE SSO (OAuth2).
    (`tkinter`, used by the GUI, ships with most Python installs — on
    some Linux distros you may need to install `python3-tk` separately.)
 
-   The desktop app's small background window and its "Open Console"
-   window both use `pywebview`, which on Windows needs the **WebView2
-   Runtime** to render — it ships pre-installed with Windows 10/11 in
-   the vast majority of cases via Windows Update/Edge, so this usually
-   needs nothing extra, but it's the one real system-level dependency
-   beyond the `pip install` above.
+   The desktop app's "Open Console" window uses `pywebview`, which on
+   Windows needs the **WebView2 Runtime** to render — it ships
+   pre-installed with Windows 10/11 in the vast majority of cases via
+   Windows Update/Edge, so this usually needs nothing extra, but it's
+   the one real system-level dependency beyond the `pip install` above.
 
 2. **Register an application** at https://developers.eveonline.com/applications
    - Callback URL: `http://localhost:8765/callback`
@@ -77,13 +76,12 @@ python eve_web.py
 
 # Desktop app — runs the same eve_web.py dashboard internally (no
 # separate server to start), opens it in your regular default browser,
-# and keeps a small native launcher window running in the background
-# (Open Dashboard / Open Console / Quit) — closing that launcher, or
-# its Quit button, is what actually stops the app
+# and runs a system tray icon in the background (Open Dashboard /
+# Open Console / Quit) — its Quit item is what actually stops the app
 python eve_gui.py
 ```
 
-The launcher's "Open Console" button — and the dashboard's own
+The tray icon's "Open Console" item — and the dashboard's own
 "Command terminal" link at the bottom of the page — open the old
 CLI-style command page as its own separate native app window, distinct
 from the browser-tab dashboard.
@@ -102,11 +100,11 @@ app can be packaged into a single portable `New-Eden-Terminal.exe` —
 no install step, no admin rights, just download and double-click. It
 opens the live dashboard in your regular default browser — same tabs,
 same data, as `eve_web.py`, just not wrapped in a special window — and
-keeps a small native launcher window running in the background so
-there's something to click if you want to reopen the dashboard tab,
-open the command-console page as its own native window, or fully quit
-the app. Closing your browser tab does *not* stop the app; the
-launcher window (or its Quit button) does.
+runs a system tray icon in the background so there's something to
+click if you want to reopen the dashboard tab, open the
+command-console page as its own native window, or fully quit the app.
+Closing your browser tab does *not* stop the app; the tray icon's Quit
+item does.
 
 First launch shows a setup screen that walks through registering a
 free EVE developer app (same one-time step as above, just done inside
@@ -139,7 +137,12 @@ console's `index.html`) into the `.exe` (Flask can't find it
 otherwise — PyInstaller only auto-detects Python code, not data
 files). `--collect-all webview` bundles pywebview's own internal
 resource files, which its own PyInstaller hook doesn't fully cover.
-Opening the console window re-invokes this same `.exe` with a hidden
+The tray icon's `pystray` doesn't need an equivalent flag — its
+PyInstaller hook (shipped by `pyinstaller-hooks-contrib`, already a
+PyInstaller dependency) auto-discovers the Windows backend module — but
+if the tray icon doesn't appear in a build, add
+`--hidden-import pystray._win32` as a fallback. Opening the console
+window re-invokes this same `.exe` with a hidden
 `--console-window` flag as a separate process — a onefile build
 re-extracts itself briefly on every launch, so that window takes a
 moment longer to appear than the browser tab does; this is normal.

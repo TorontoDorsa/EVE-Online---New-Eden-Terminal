@@ -3,19 +3,20 @@
 New Eden Terminal — desktop app
 ------------------------------
 Launches the same live HTML dashboard eve_web.py serves in the user's own
-default browser (a normal webpage, not a wrapped window) and keeps a small
-native launcher window open in the background — that launcher, via
-pywebview, is what gives the app a lifecycle (something to quit) and a way
-to open the command-console page as a real native app window on request,
-separate from the browser-tab dashboard. The one thing this still needs
-Tkinter for is a first-run screen asking for the user's own EVE developer
-app credentials, since that has to happen before anything web-based can
-even start.
+default browser (a normal webpage, not a wrapped window) and keeps a
+system tray icon running in the background — that tray icon is what
+gives the app a lifecycle (something to quit) and a way to reopen the
+dashboard or open the command-console page as a real native app window
+on request, separate from the browser-tab dashboard. The one thing this
+still needs Tkinter for is a first-run screen asking for the user's own
+EVE developer app credentials, since that has to happen before anything
+web-based can even start.
 
-Requires: pip install -r requirements.txt (adds pywebview + pythonnet on
-top of flask/requests — pythonnet lets pywebview use the Chromium-based
-WebView2 renderer on Windows instead of falling back to a legacy one that
-can't render this project's CSS).
+Requires: pip install -r requirements.txt (adds pywebview + pythonnet +
+pystray on top of flask/requests — pythonnet lets pywebview use the
+Chromium-based WebView2 renderer on Windows instead of falling back to a
+legacy one that can't render this project's CSS; pywebview itself is
+still needed for the console window, just not for the main app anymore).
 
 Usage:
     python eve_gui.py
@@ -33,6 +34,8 @@ import tkinter as tk
 from tkinter import ttk
 
 import webview
+import pystray
+from PIL import Image, ImageDraw
 
 import eve_sso_auth as auth
 import eve_web
@@ -140,56 +143,46 @@ class SetupWindow:
         self.root.destroy()
 
 
-_LAUNCHER_HTML = """
-<!doctype html><html><head><meta charset="utf-8">
-<style>
-  body {{ margin:0; background:#05070c; color:#d7e1f2; font-family:"Segoe UI",sans-serif;
-         display:flex; flex-direction:column; align-items:center; justify-content:center;
-         height:100vh; text-align:center; }}
-  h1 {{ font-size:15px; letter-spacing:0.04em; color:#ffb545; margin:0 0 4px; }}
-  p {{ font-size:11.5px; color:#6f7f9e; margin:0 0 20px; }}
-  button {{ display:block; width:220px; margin:6px 0; padding:9px 0; background:#0d1420;
-           border:1px solid #21314f; border-radius:6px; color:#d7e1f2; font-size:12.5px;
-           cursor:pointer; }}
-  button:hover {{ border-color:#ffb545; color:#ffb545; }}
-  #quit-btn {{ margin-top:14px; color:#8a94a8; border-color:#2a3346; }}
-</style></head>
-<body>
-  <h1>NEW EDEN TERMINAL</h1>
-  <p>Running in the background — port {port}</p>
-  <button onclick="window.pywebview.api.open_dashboard()">Open Dashboard</button>
-  <button onclick="window.pywebview.api.open_console()">Open Console</button>
-  <button id="quit-btn" onclick="window.pywebview.api.quit_app()">Quit</button>
-</body></html>
-"""
+def _make_tray_icon():
+    """Builds the tray icon image procedurally — a small amber diamond on
+    the dashboard's own dark background — rather than bundling a binary
+    asset file to manage across the source zip and the frozen .exe."""
+    size = 64
+    img = Image.new("RGB", (size, size), "#05070c")
+    draw = ImageDraw.Draw(img)
+    mid = size // 2
+    pad = 10
+    draw.polygon(
+        [(mid, pad), (size - pad, mid), (mid, size - pad), (pad, mid)],
+        fill="#ffb545",
+    )
+    return img
 
 
-class LauncherAPI:
-    """Bridged to the launcher window's JS via pywebview's js_api — see
-    https://pywebview.flowrl.com/guide/api.html for the expose/js_api
-    pattern this relies on."""
+def _build_tray_menu(port):
+    def open_dashboard(icon, item):
+        webbrowser.open(f"http://127.0.0.1:{port}/dashboard")
 
-    def __init__(self, port):
-        self.port = port
+    def open_console(icon, item):
+        spawn_console_window(port)
 
-    def open_dashboard(self):
-        webbrowser.open(f"http://127.0.0.1:{self.port}/dashboard")
+    def quit_app(icon, item):
+        icon.stop()
 
-    def open_console(self):
-        spawn_console_window(self.port)
-
-    def quit_app(self):
-        for window in webview.windows:
-            window.destroy()
+    return pystray.Menu(
+        pystray.MenuItem("Open Dashboard", open_dashboard, default=True),
+        pystray.MenuItem("Open Console", open_console),
+        pystray.MenuItem("Quit", quit_app),
+    )
 
 
 def launch_dashboard():
     """Run eve_web.py's existing Flask app in a background thread, open the
     dashboard as an ordinary page in the user's real default browser, and
-    keep a small native launcher window open — that launcher is the app's
-    lifecycle anchor (closing it, or its Quit button, ends the process and
-    stops the Flask server) and the way to open the console as a real
-    native app window on request."""
+    run a system tray icon — that icon is the app's lifecycle anchor
+    (its Quit item ends the process and stops the Flask server) and the
+    way to reopen the dashboard tab or open the console as a real native
+    app window on request."""
     port = _free_port()
     thread = threading.Thread(
         target=lambda: eve_web.app.run(host="127.0.0.1", port=port, threaded=True, use_reloader=False),
@@ -197,11 +190,11 @@ def launch_dashboard():
     )
     thread.start()
     webbrowser.open(f"http://127.0.0.1:{port}/dashboard")
-    webview.create_window(
-        "New Eden Terminal", html=_LAUNCHER_HTML.format(port=port),
-        width=340, height=280, resizable=False, js_api=LauncherAPI(port),
+    icon = pystray.Icon(
+        "New Eden Terminal", _make_tray_icon(),
+        f"New Eden Terminal — port {port}", _build_tray_menu(port),
     )
-    webview.start()
+    icon.run()
 
 
 def _console_window_mode():
