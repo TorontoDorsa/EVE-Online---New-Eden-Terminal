@@ -125,7 +125,7 @@ def get_corp_overview_data(char_id=None):
 
     char_id = char_id or auth.get_character_id()
     corp_id = esi.get_corporation_id(char_id)
-    corp = esi.get(f"/corporations/{corp_id}/", datasource="tranquility")
+    corp = esi.get_corporation(corp_id)
 
     return {
         "membership": get_corp_membership_data(corp),

@@ -151,7 +151,7 @@ def get_portrait_data_uri(char_id):
 def get_corporation_data(char_id):
     """Public endpoint — no auth needed beyond knowing the character's corp_id."""
     corp_id = esi.get_corporation_id(char_id)
-    corp = esi.get(f"/corporations/{corp_id}/", datasource="tranquility")
+    corp = esi.get_corporation(corp_id)
     return {"id": corp_id, "name": corp["name"], "ticker": corp["ticker"]}
 
 
@@ -193,9 +193,17 @@ def _module_required_skills(type_id):
     fitted module or loaded charge — same verified pattern already used
     for ships and mining crystals this session. Cached: a module's own
     skill requirement never changes, so an unchanged fit costs zero
-    extra ESI calls on the next dashboard refresh."""
+    extra ESI calls on the next dashboard refresh.
+
+    Also warms esi.resolve_type_name()'s own cache with the item's name
+    from this same response — that endpoint (/universe/types/{id}/) was
+    otherwise being fetched twice per fitted item (once here for
+    dogma_attributes, once by resolve_type_name() for the name alone);
+    get_current_fit_data() calls this function first so the second call
+    hits the warmed cache instead of refetching."""
     if type_id not in _MODULE_SKILL_REQ_CACHE:
         t = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
+        esi._TYPE_NAME_CACHE.setdefault(type_id, t["name"])
         by_attr = {a["attribute_id"]: a["value"] for a in t.get("dogma_attributes", [])}
         reqs = []
         for skill_attr, level_attr in ((182, 277), (183, 278), (184, 279)):
@@ -230,15 +238,16 @@ def get_current_fit_data(assets, ship_item_id):
         if a.get("location_id") == ship_item_id
         and (a.get("location_flag") or "").startswith(_FIT_SLOT_PREFIXES)
     ]
-    return [
-        {
+    result = []
+    for a in fitted:
+        required_skills = _module_required_skills(a["type_id"])  # warms the name cache below
+        result.append({
             "type_id": a["type_id"],
             "name": esi.resolve_type_name(a["type_id"]),
             "slot": a.get("location_flag"),
-            "required_skills": _module_required_skills(a["type_id"]),
-        }
-        for a in fitted
-    ]
+            "required_skills": required_skills,
+        })
+    return result
 
 
 def _assets_summary(char_id):

@@ -81,21 +81,38 @@ def get_zkill_data(character_id, limit=10):
         return {"available": False, "error": str(e), "kills": [], "losses": [],
                 "biggest_kill": None, "biggest_loss": None}
 
-    all_kills = _summarize(kills_raw, character_id)
-    all_losses = _summarize(losses_raw, character_id)
+    def _top_and_biggest(raw):
+        # Only resolve names for what's actually shown: the most recent
+        # `limit` entries plus the single biggest by ISK (if it isn't
+        # already among them) — mirrors get_global_top_kill()'s fix below
+        # for the same "resolve everything just to throw most of it away"
+        # cost, which previously applied here too (up to 200 uncached
+        # system/ship-name ESI lookups just to keep 10 + 1 of each).
+        if not raw:
+            return [], None
+        shown_count = min(limit, len(raw))
+        biggest_idx = max(range(len(raw)), key=lambda i: raw[i]["zkb"]["totalValue"])
+        indices = list(range(shown_count))
+        if biggest_idx >= shown_count:
+            indices.append(biggest_idx)
+        resolved = dict(zip(indices, _summarize([raw[i] for i in indices], character_id)))
+        return [resolved[i] for i in range(shown_count)], resolved[biggest_idx]
+
+    kills, biggest_kill = _top_and_biggest(kills_raw)
+    losses, biggest_loss = _top_and_biggest(losses_raw)
 
     return {
         "available": True,
-        "kills": all_kills[:limit],
-        "losses": all_losses[:limit],
+        "kills": kills,
+        "losses": losses,
         # zKillboard returns at most 200 per request — this is "how many came
         # back", not a lifetime count. Biggest kill/loss is computed over
         # this same returned set, so it's "biggest of the recent ~200", not
         # necessarily an all-time record.
         "recent_kills_count": len(kills_raw),
         "recent_losses_count": len(losses_raw),
-        "biggest_kill": max(all_kills, key=lambda r: r["isk_value"], default=None),
-        "biggest_loss": max(all_losses, key=lambda r: r["isk_value"], default=None),
+        "biggest_kill": biggest_kill,
+        "biggest_loss": biggest_loss,
     }
 
 

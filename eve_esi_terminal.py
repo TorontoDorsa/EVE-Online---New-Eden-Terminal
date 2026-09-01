@@ -198,10 +198,28 @@ def cmd_location():
     print(f"\nCurrent system: {loc['system_name']} (security {loc['security_status']:.2f})\n")
 
 
+_CORP_ID_CACHE = {}
+_CORP_DATA_CACHE = {}
+
+
 def get_corporation_id(char_id):
-    """Public endpoint — no auth needed to look up a character's corp."""
-    data = get(f"/characters/{char_id}/", datasource="tranquility")
-    return data["corporation_id"]
+    """Public endpoint — no auth needed to look up a character's corp.
+    Cached: a character's corp only changes on an in-game corp switch,
+    never mid-session, and this was previously being called twice per
+    dashboard load (once for the Overview corp name, once by
+    corp_overview.py's own fetch) for an identical result."""
+    if char_id not in _CORP_ID_CACHE:
+        data = get(f"/characters/{char_id}/", datasource="tranquility")
+        _CORP_ID_CACHE[char_id] = data["corporation_id"]
+    return _CORP_ID_CACHE[char_id]
+
+
+def get_corporation(corp_id):
+    """Public endpoint — the full /corporations/{id}/ record. Cached for
+    the same reason as get_corporation_id() above."""
+    if corp_id not in _CORP_DATA_CACHE:
+        _CORP_DATA_CACHE[corp_id] = get(f"/corporations/{corp_id}/", datasource="tranquility")
+    return _CORP_DATA_CACHE[corp_id]
 
 
 # ---- Industry & mining ----
