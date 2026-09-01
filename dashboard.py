@@ -184,7 +184,7 @@ def get_assets_data(assets, top_n=8):
     }
 
 
-_FIT_SLOT_PREFIXES = ("HiSlot", "MedSlot", "LoSlot", "RigSlot")
+_FIT_SLOT_PREFIXES = ("HiSlot", "MedSlot", "LoSlot", "RigSlot", "DroneBay")
 _MODULE_SKILL_REQ_CACHE = {}
 
 
@@ -213,10 +213,16 @@ def get_current_fit_data(assets, ship_item_id):
     Verified live: asset entries whose location_id matches the ship's
     real ship_item_id (a specific asset instance, distinct from
     ship_type_id) and whose location_flag names a real fitting slot are
-    genuinely fitted, as opposed to DroneBay/Cargo which are just
-    carried. A loaded charge shares its turret's exact slot flag, so
-    the specific crystal loaded right now is identifiable, not just
-    what's carried as spares."""
+    genuinely fitted. A loaded charge shares its turret's exact slot
+    flag, so the specific crystal loaded right now is identifiable, not
+    just what's carried as spares.
+
+    DroneBay is included too — a real T2 drone (verified live: Hobgoblin
+    II) carries the exact same requiredSkill/requiredSkillLevel dogma
+    attributes a fitted module does (Light Drone Operation, Gallente
+    Drone Specialization, Drones), so a carried drone is active,
+    launchable gear the same way a loaded mining crystal is — unlike
+    plain Cargo, which stays excluded as genuinely just carried."""
     if not ship_item_id:
         return []
     fitted = [
@@ -798,6 +804,70 @@ def _base_ore_name(name):
     return _ORE_GRADE_SUFFIX_RE.sub("", name)
 
 
+def _ship_hull_bonus_entry(ship_label, skill_name, bonus_lines, trained_level, target_level):
+    """Real before/after text for a skill governed by the character's
+    CURRENT ship's own hull-encoded bonus (ship_data.py's `skill_bonuses`
+    — verified live against ESI dogma_effects AND cross-checked line for
+    line against EVE University's real per-ship wiki page for every
+    curated ship, since neither the effect's func type nor its name
+    reliably flags a real per-level bonus vs. a flat Role Bonus on its
+    own). `bonus_lines[0]` is the skill's headline bonus on this hull
+    (ore/damage yield where one exists); any remaining lines are folded
+    into the sentence, not the score. This is at least as concrete as a
+    fitted-module match (_FIT_RELEVANCE_FACTOR) — it's the character's
+    real, currently-flown ship, not just something carried — so it gets
+    the same top-tier factor."""
+    headline = bonus_lines[0]
+    pct, label = headline["pct_per_level"], headline["label"]
+    current_total, target_total = pct * trained_level, pct * target_level
+    if pct >= 0:
+        headline_sentence = (
+            f"would raise your {ship_label}'s {label} bonus from {current_total:.1f}% "
+            f"to {target_total:.1f}% ({pct:.1f}% per level)"
+        )
+    else:
+        headline_sentence = (
+            f"would improve your {ship_label}'s {label} from a {abs(current_total):.1f}% "
+            f"to a {abs(target_total):.1f}% reduction ({abs(pct):.1f}% per level)"
+        )
+    extra = bonus_lines[1:]
+    extra_sentence = ""
+    if extra:
+        parts = [f"a real {b['pct_per_level']:+.1f}%/level {b['label']} bonus" for b in extra]
+        extra_sentence = " It also comes with " + ", ".join(parts) + "."
+    trained_roman = skill_plan.ROMAN.get(trained_level, "?")
+    target_roman = skill_plan.ROMAN.get(target_level, "?")
+    why = (
+        f"Training {skill_name} from {trained_roman} to {target_roman} {headline_sentence}."
+        f"{extra_sentence}"
+    )
+    return {"quantified_pct": pct, "factor": _FIT_RELEVANCE_FACTOR, "why": why}
+
+
+def _apply_ship_hull_bonuses(context, ship, curated_ships, rows):
+    """Overlays real quantified_pct entries for any governing skill on the
+    character's CURRENT ship (matched against a curated ship_data.py dict
+    by real type_name) with a real trained-vs-target gap — e.g. Mining
+    Barge on a Retriever, Minmatar Frigate on a Rifter. A character not
+    flying one of the curated hulls gets no override here; the skill
+    falls back to whatever the rest of the context builder already gave
+    it. Always assigns a brand-new dict (see _apply_magic14_framing()'s
+    docstring for why that matters when entries can be shared objects)."""
+    ship_entry = curated_ships.get(ship.get("type_name"))
+    if not ship_entry:
+        return context
+    ship_label = ship.get("ship_name") or ship.get("type_name") or "your ship"
+    rows_by_name = {r["name"]: r for r in rows}
+    for skill_name, bonus_lines in ship_entry.get("skill_bonuses", {}).items():
+        row = rows_by_name.get(skill_name)
+        if not row or row.get("status") == "ok" or not bonus_lines:
+            continue
+        context[skill_name] = _ship_hull_bonus_entry(
+            ship_label, skill_name, bonus_lines, row.get("trained", 0), row.get("target", 5)
+        )
+    return context
+
+
 def _mining_context(profile):
     """Real activity-driven scoring context for Mining skill tips — a
     skill's ranking factor now reflects whether the character actually
@@ -1339,10 +1409,16 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             # that a category's own logic doesn't otherwise track (e.g.
             # CPU Management for Mining) still needs to be present before
             # a real fitted-module match against it can be applied.
-            mining_context = _apply_fit_relevance(_apply_magic14_framing(_mining_context(profile)), profile)
+            mining_context = _apply_ship_hull_bonuses(
+                _apply_fit_relevance(_apply_magic14_framing(_mining_context(profile)), profile),
+                ship, ship_data.MINING_SHIPS, skill_plans["Mining"],
+            )
             industry_context = _industry_context(profile)
-            pvp_context = _apply_fit_relevance(
-                _apply_magic14_framing(_pvp_context(profile, ship, skill_plans["PVP"])), profile
+            pvp_context = _apply_ship_hull_bonuses(
+                _apply_fit_relevance(
+                    _apply_magic14_framing(_pvp_context(profile, ship, skill_plans["PVP"])), profile
+                ),
+                ship, ship_data.PVP_SHIPS, skill_plans["PVP"],
             )
             mission_context = _mission_context(profile)
             theme_context = _skills_theme_context(profile)

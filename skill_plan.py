@@ -212,12 +212,20 @@ def rank_skill_tips(rows, limit=3, category_label="these skills", context=None):
     full real ESI description, so the one-line `text` stays short and
     consistent whether or not a quantified bonus was found.
 
-    `context` is an optional {skill_name: {"factor": float, "why": str}}
-    dict — when a skill in `rows` has an entry, its base ranking score
-    (pct_per_level x levels_remaining, or levels_remaining alone for
-    unquantified skills) is multiplied by `factor`, and `why` is appended
-    to the skill's description. A missing `factor` defaults to 1.0 (no
-    change to today's ranking); a missing `why` appends nothing. Real
+    `context` is an optional {skill_name: {"factor": float, "why": str,
+    "quantified_pct": float}} dict — when a skill in `rows` has an entry,
+    its base ranking score (pct_per_level x levels_remaining, or
+    levels_remaining alone for unquantified skills) is multiplied by
+    `factor`, and `why` is appended to the skill's description. A missing
+    `factor` defaults to 1.0 (no change to today's ranking); a missing
+    `why` appends nothing. An optional `quantified_pct` overrides/bypasses
+    the `PCT_PER_LEVEL_RE` description-regex check entirely — some real
+    per-level bonuses (e.g. a ship hull's own skill-scaling bonus) never
+    appear in the governing skill's own ESI description text at all, so
+    there'd otherwise be no way for a skill like that to ever reach the
+    quantified tier no matter how real and large its bonus is. When
+    present, it's trusted as-is (the caller already resolved a real
+    number some other way); when absent, behavior is unchanged. Real
     relevance (`factor > 1.0`) is a ranking TIER, not just a multiplier —
     within each of the two tiers above, skills with a real activity
     signal behind them always outrank ones without one, regardless of raw
@@ -243,9 +251,10 @@ def rank_skill_tips(rows, limit=3, category_label="these skills", context=None):
             continue
         factor = context.get(r["name"], {}).get("factor", 1.0)
         is_relevant = factor > 1.0
-        match = PCT_PER_LEVEL_RE.search(r.get("description") or "")
-        if match:
-            pct_per_level = float(match.group(1))
+        quantified_pct = context.get(r["name"], {}).get("quantified_pct")
+        match = None if quantified_pct is not None else PCT_PER_LEVEL_RE.search(r.get("description") or "")
+        if quantified_pct is not None or match:
+            pct_per_level = quantified_pct if quantified_pct is not None else float(match.group(1))
             base_score = pct_per_level * levels_remaining
             quantified.append((is_relevant, base_score * factor, pct_per_level, levels_remaining, r))
         else:
