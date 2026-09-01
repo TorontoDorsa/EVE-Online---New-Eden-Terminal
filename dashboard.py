@@ -126,6 +126,7 @@ def get_ship_data(char_id):
         "type_name": esi.resolve_type_name(type_id),
         "ship_name": ship.get("ship_name", "unnamed"),
         "hull_stats": hull_stats,
+        "ship_item_id": ship.get("ship_item_id"),
     }
 
 
@@ -159,8 +160,15 @@ def _ship(char_id):
     print(f"  Current ship : {ship['type_name']} ({ship['ship_name']})")
 
 
-def get_assets_data(char_id, top_n=8):
-    assets = esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
+def _fetch_assets(char_id):
+    """Raw /characters/{id}/assets/ list — shared by get_assets_data()
+    (Industry tab summary) and get_current_fit_data() (real fitted-gear
+    checks below) so the same character's asset list is only fetched
+    once per dashboard load, not twice."""
+    return esi._auth_get(f"/characters/{char_id}/assets/", datasource="tranquility")
+
+
+def get_assets_data(assets, top_n=8):
     if not assets:
         return {"total_items": 0, "distinct_locations": 0, "top_items": []}
 
@@ -176,8 +184,59 @@ def get_assets_data(char_id, top_n=8):
     }
 
 
+_FIT_SLOT_PREFIXES = ("HiSlot", "MedSlot", "LoSlot", "RigSlot")
+_MODULE_SKILL_REQ_CACHE = {}
+
+
+def _module_required_skills(type_id):
+    """Real requiredSkill/requiredSkillLevel dogma attributes for a
+    fitted module or loaded charge — same verified pattern already used
+    for ships and mining crystals this session. Cached: a module's own
+    skill requirement never changes, so an unchanged fit costs zero
+    extra ESI calls on the next dashboard refresh."""
+    if type_id not in _MODULE_SKILL_REQ_CACHE:
+        t = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
+        by_attr = {a["attribute_id"]: a["value"] for a in t.get("dogma_attributes", [])}
+        reqs = []
+        for skill_attr, level_attr in ((182, 277), (183, 278), (184, 279)):
+            skill_type_id = by_attr.get(skill_attr)
+            if skill_type_id:
+                level = int(by_attr.get(level_attr, 1))
+                reqs.append((esi.resolve_type_name(int(skill_type_id)), level))
+        _MODULE_SKILL_REQ_CACHE[type_id] = reqs
+    return _MODULE_SKILL_REQ_CACHE[type_id]
+
+
+def get_current_fit_data(assets, ship_item_id):
+    """Real modules (and loaded charges, e.g. mining crystals) currently
+    fitted on the character's own current ship — not just the hull.
+    Verified live: asset entries whose location_id matches the ship's
+    real ship_item_id (a specific asset instance, distinct from
+    ship_type_id) and whose location_flag names a real fitting slot are
+    genuinely fitted, as opposed to DroneBay/Cargo which are just
+    carried. A loaded charge shares its turret's exact slot flag, so
+    the specific crystal loaded right now is identifiable, not just
+    what's carried as spares."""
+    if not ship_item_id:
+        return []
+    fitted = [
+        a for a in assets
+        if a.get("location_id") == ship_item_id
+        and (a.get("location_flag") or "").startswith(_FIT_SLOT_PREFIXES)
+    ]
+    return [
+        {
+            "type_id": a["type_id"],
+            "name": esi.resolve_type_name(a["type_id"]),
+            "slot": a.get("location_flag"),
+            "required_skills": _module_required_skills(a["type_id"]),
+        }
+        for a in fitted
+    ]
+
+
 def _assets_summary(char_id):
-    data = get_assets_data(char_id)
+    data = get_assets_data(_fetch_assets(char_id))
     if not data["top_items"] and data["total_items"] == 0:
         print("  No assets found.")
         return
@@ -643,7 +702,7 @@ def get_corp_tips(corp_overview_data):
 _PVP_ACTIVITY_WINDOW_DAYS = 90
 
 
-def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats):
+def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats, fit_data):
     """Cross-category signals computed once per dashboard load and reused
     by every tip category's context-builder below — blends each
     category's real skill-training completion ratio with real behavioral
@@ -705,6 +764,7 @@ def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, z
         "pvp_activity": {"kills": recent_kills, "losses": recent_losses, "window_days": _PVP_ACTIVITY_WINDOW_DAYS},
         "ship_stats": ship.get("hull_stats") or {},
         "market_activity": market_stats,
+        "current_fit": {"ship_name": ship.get("ship_name") or "your ship", "modules": fit_data},
     }
 
 
@@ -1074,6 +1134,115 @@ def _skills_theme_context(profile):
     return {name: entry for name in skill_plan.CORE_TARGETS[dominant]}
 
 
+# CCP's own real, named set — verified live from
+# eveonline.com/eve-academy/magic-14 — skills that improve every ship,
+# not just one playstyle. Cross-referenced against this project's own
+# skill_categories_data.py this session: 2 of the 14 (Capacitor
+# Management, Capacitor Systems Operation) weren't core anywhere, and
+# Mining tracked none of the 14 at all — both fixed in CORE_TARGETS.
+_MAGIC_14 = frozenset({
+    "Spaceship Command", "CPU Management", "Power Grid Management", "Capacitor Management",
+    "Capacitor Systems Operation", "Mechanics", "Hull Upgrades", "Shield Management",
+    "Shield Operation", "Long Range Targeting", "Signature Analysis", "Navigation",
+    "Evasive Maneuvering", "Warp Drive Operation",
+})
+
+_MAGIC14_SUFFIX = (
+    " This is one of the real Magic 14 — CCP's own named set of skills that improve "
+    "every ship you fly, not just this one."
+)
+
+
+def _apply_magic14_framing(context):
+    """Appends the real Magic 14 framing to any tip for one of those 14
+    skills, in whichever category it surfaces — and gives a Magic 14
+    skill with no other real signal a plain baseline entry instead of
+    silently getting no personalization, since these are universally
+    relevant by definition, not conditional on activity or a fit match.
+
+    Several context-builders above intentionally share ONE entry dict
+    object across multiple skill names (e.g. _mission_context() gives
+    every Mission Running skill the same sentence) — safe as long as
+    nothing ever mutates an entry in place. This function (and
+    _apply_fit_relevance() below) must respect that: always assign a
+    NEW dict to context[name] rather than editing entry["why"]/
+    entry["factor"] in place, or a change meant for one Magic-14 skill
+    would leak onto every other skill quietly sharing that same object
+    (caught live during verification — Diplomacy was getting the Magic
+    14 sentence purely because it shares Connections'/Repair Systems'
+    entry object in _mission_context())."""
+    for name in _MAGIC_14:
+        entry = context.get(name, {"factor": 1.0, "why": ""})
+        if _MAGIC14_SUFFIX not in entry["why"]:
+            context[name] = {"factor": entry["factor"], "why": (entry["why"] + _MAGIC14_SUFFIX).strip()}
+    return context
+
+
+_FIT_RELEVANCE_FACTOR = 1.6
+
+
+def _apply_fit_relevance(context, profile):
+    """Boosts any skill in `context` that's required by a module actually
+    fitted on the character's CURRENT ship right now to the strongest
+    relevance tier — more concrete than "recently mined this ore" or
+    "recent zKillboard activity," since it's directly and currently
+    true. Shared by Mining and PVP context builders below. Always
+    assigns a new dict to context[skill_name] rather than mutating the
+    existing entry in place — see _apply_magic14_framing()'s docstring
+    for why that matters here."""
+    fit = profile["current_fit"]
+    ship_name = fit["ship_name"]
+    for module in fit["modules"]:
+        for skill_name, _req_level in module["required_skills"]:
+            if skill_name not in context:
+                continue
+            why_addition = (
+                f"Your {ship_name} has a {module['name']} fitted right now — this applies directly to it."
+            )
+            entry = context[skill_name]
+            if why_addition in entry["why"]:
+                continue
+            context[skill_name] = {
+                "factor": max(entry["factor"], _FIT_RELEVANCE_FACTOR),
+                "why": f"{entry['why']} {why_addition}".strip(),
+            }
+    return context
+
+
+def _fit_completeness_tips(fit_data, trained, ship_name, limit=3):
+    """New: Skills tab — is the character's CURRENT FIT actually
+    maximized? For every real fitted module's required skill trained
+    below level 5, a concrete tip citing the real fitted module(s) it
+    affects. Not rows from the curated skill_plans lists (this is
+    derived straight from real fit data), so these are built directly
+    as {"text", "why"} dicts and concatenated onto the Skills tab's
+    existing tip list, the same pattern already used for ship-
+    eligibility tips on Mining/PVP."""
+    by_skill = {}
+    for module in fit_data:
+        for skill_name, _req_level in module["required_skills"]:
+            skill_id = skill_plan.SKILL_TYPE_IDS.get(skill_name)
+            if not skill_id:
+                continue
+            have = trained.get(skill_id, 0)
+            if have >= 5:
+                continue
+            by_skill.setdefault(skill_name, {"trained": have, "modules": []})["modules"].append(module["name"])
+
+    tips = []
+    for skill_name, info in sorted(by_skill.items(), key=lambda kv: kv[1]["trained"]):
+        modules_str = ", ".join(sorted(set(info["modules"])))
+        trained_roman = skill_plan.ROMAN.get(info["trained"], "?")
+        tips.append({
+            "text": f"{skill_name} is at {trained_roman}/V, and gates or improves what's fitted on your {ship_name} right now.",
+            "why": (
+                f"Fitted module(s) affected: {modules_str}. Training to V is the real ceiling for "
+                f"everything currently fitted that depends on this skill."
+            ),
+        })
+    return tips[:limit]
+
+
 _EMPTY_SKILL_PLANS = {cat: [] for cat in ("Mining", "Industry", "PVP", "Quality of Life", "Mission Running", "Exploration")}
 
 
@@ -1111,7 +1280,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         f_net_isk = pool.submit(get_net_isk_data, char_id, mining_days)
         f_location = pool.submit(esi.get_location_data, char_id)
         f_skills_summary = pool.submit(esi.get_skills_summary, char_id)
-        f_assets = pool.submit(get_assets_data, char_id)
+        f_assets = pool.submit(_fetch_assets, char_id)
         f_blueprints = pool.submit(esi.get_blueprints_data, limit=25, char_id=char_id)
         f_current_training = pool.submit(skill_plan.get_current_training_data, char_id)
         f_mining = pool.submit(get_mining_throughput_data, char_id, mining_days, hours_per_day)
@@ -1141,6 +1310,10 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         )
         active_jobs, active_jobs_perm = _scoped_result(f_active_jobs, "active_jobs", [])
 
+        assets_raw, assets_perm = _scoped_result(f_assets, "assets", [])
+        assets = get_assets_data(assets_raw)
+        fit_data = get_current_fit_data(assets_raw, ship.get("ship_item_id"))
+
         # Resolved here (earlier than their "natural" position further down)
         # because the multi-factor tip context below needs them — wallet
         # journal activity and zKillboard activity are two of the real
@@ -1159,11 +1332,18 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
 
         if skills_perm["available"]:
             profile = _build_character_profile(
-                skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats
+                skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats, fit_data
             )
-            mining_context = _mining_context(profile)
+            # Magic 14 framing runs FIRST so its baseline entries exist for
+            # _apply_fit_relevance() to find and boost — a Magic 14 skill
+            # that a category's own logic doesn't otherwise track (e.g.
+            # CPU Management for Mining) still needs to be present before
+            # a real fitted-module match against it can be applied.
+            mining_context = _apply_fit_relevance(_apply_magic14_framing(_mining_context(profile)), profile)
             industry_context = _industry_context(profile)
-            pvp_context = _pvp_context(profile, ship, skill_plans["PVP"])
+            pvp_context = _apply_fit_relevance(
+                _apply_magic14_framing(_pvp_context(profile, ship, skill_plans["PVP"])), profile
+            )
             mission_context = _mission_context(profile)
             theme_context = _skills_theme_context(profile)
 
@@ -1180,11 +1360,16 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
                 skill_plans["Quality of Life"] + skill_plans["Mission Running"] + skill_plans["Exploration"]
             )
             skills_tab_tips = skill_plan.rank_skill_tips(
-                skills_tab_rows, category_label="Skills", context={**theme_context, **mission_context}
+                skills_tab_rows, category_label="Skills",
+                context=_apply_magic14_framing({**theme_context, **mission_context}),
+            )
+            fit_completeness_tips = _fit_completeness_tips(
+                fit_data, trained_skills, ship.get("ship_name") or "your ship"
             )
         else:
             unavailable_tip = [{"text": "Skill-based tips aren't available right now.", "why": skills_perm["reason"]}]
             mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = unavailable_tip
+            fit_completeness_tips = []
 
         tips = {
             "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
@@ -1192,7 +1377,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             ),
             "Industry": industry_skill_tips + market_order_tips,
             "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ship_data.PVP_SHIPS, limit=2),
-            "Skills": skills_tab_tips,
+            "Skills": skills_tab_tips + fit_completeness_tips,
             "Corporation": get_corp_tips(corp_overview_data),
         }
 
@@ -1200,7 +1385,6 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         skills_summary, skills_summary_perm = _scoped_result(
             f_skills_summary, "skills", {"total_sp": 0, "unallocated_sp": 0, "skills_trained": 0}
         )
-        assets, assets_perm = _scoped_result(f_assets, "assets", {"total_items": 0, "distinct_locations": 0, "top_items": []})
         blueprints, blueprints_perm = _scoped_result(f_blueprints, "blueprints", {"total": 0, "rows": []})
         current_training, current_training_perm = _scoped_result(
             f_current_training, "skillqueue", {"training": False, "queue_length": 0}

@@ -21,7 +21,7 @@
 # regardless of trained level. Every other skill in FULL_SKILL_NAMES
 # defaults to a target of 5 (max).
 
-CORE_TARGETS = {'Mining': {'Mining': 5, 'Astrogeology': 5, 'Mining Upgrades': 5, 'Mining Frigate': 5, 'Mining Barge': 5, 'Exhumers': 5, 'Ice Harvesting': 4, 'Gas Cloud Harvesting': 4, 'Deep Core Mining': 4, 'Simple Ore Processing': 4, 'Coherent Ore Processing': 4, 'Complex Ore Processing': 4, 'Variegated Ore Processing': 4, 'Erratic Ore Processing': 4, 'Abyssal Ore Processing': 4, 'Ubiquitous Moon Ore Processing': 4, 'Common Moon Ore Processing': 4, 'Uncommon Moon Ore Processing': 4, 'Rare Moon Ore Processing': 4, 'Exceptional Moon Ore Processing': 4}, 'Industry': {'Industry': 5, 'Advanced Industry': 5, 'Mass Production': 5, 'Advanced Mass Production': 4, 'Laboratory Operation': 5, 'Advanced Laboratory Operation': 4, 'Metallurgy': 5, 'Research': 5, 'Science': 5, 'Reprocessing': 4, 'Reprocessing Efficiency': 4, 'Supply Chain Management': 3, 'Accounting': 5, 'Broker Relations': 5, 'Advanced Broker Relations': 4}, 'Mission Running': {'Spaceship Command': 5, 'Drones': 5, 'Shield Management': 5, 'Shield Operation': 4, 'Hull Upgrades': 5, 'Mechanics': 5, 'Repair Systems': 4, 'Tactical Shield Manipulation': 3, 'Target Management': 4, 'Long Range Targeting': 4, 'Signature Analysis': 4, 'Social': 4, 'Connections': 4, 'Negotiation': 4, 'Diplomacy': 4}, 'PVP': {'Spaceship Command': 5, 'Gunnery': 5, 'Missile Launcher Operation': 5, 'Drones': 5, 'Evasive Maneuvering': 5, 'Afterburner': 5, 'High Speed Maneuvering': 4, 'Propulsion Jamming': 4, 'Electronic Warfare': 4, 'Weapon Disruption': 4, 'Sensor Linking': 4, 'Signature Analysis': 4, 'Target Management': 4, 'Shield Management': 4, 'Hull Upgrades': 4, 'Criminal Connections': 4, 'DED Connections': 4, 'Fast Talk': 4}, 'Quality of Life': {'CPU Management': 5, 'Power Grid Management': 5, 'Weapon Upgrades': 5, 'Advanced Weapon Upgrades': 4, 'Navigation': 5, 'Warp Drive Operation': 5, 'Fuel Conservation': 4, 'Acceleration Control': 4, 'Cybernetics': 4, 'Infomorph Psychology': 4, 'Broker Relations': 4, 'Trade': 4, 'Accounting': 4, 'Jury Rigging': 4}, 'Exploration': {'Astrometrics': 5, 'Astrometric Rangefinding': 4, 'Astrometric Pinpointing': 4, 'Hacking': 4, 'Archaeology': 4, 'Astrometric Acquisition': 3, 'Survey': 3}}
+CORE_TARGETS = {'Mining': {'Mining': 5, 'Astrogeology': 5, 'Mining Upgrades': 5, 'Mining Frigate': 5, 'Mining Barge': 5, 'Exhumers': 5, 'Ice Harvesting': 4, 'Gas Cloud Harvesting': 4, 'Deep Core Mining': 4, 'Simple Ore Processing': 4, 'Coherent Ore Processing': 4, 'Complex Ore Processing': 4, 'Variegated Ore Processing': 4, 'Erratic Ore Processing': 4, 'Abyssal Ore Processing': 4, 'Ubiquitous Moon Ore Processing': 4, 'Common Moon Ore Processing': 4, 'Uncommon Moon Ore Processing': 4, 'Rare Moon Ore Processing': 4, 'Exceptional Moon Ore Processing': 4, 'Spaceship Command': 5, 'CPU Management': 5, 'Power Grid Management': 5, 'Capacitor Management': 4, 'Capacitor Systems Operation': 4, 'Mechanics': 5, 'Hull Upgrades': 5, 'Shield Management': 4, 'Shield Operation': 4, 'Long Range Targeting': 4, 'Signature Analysis': 4, 'Navigation': 5, 'Evasive Maneuvering': 5, 'Warp Drive Operation': 5}, 'Industry': {'Industry': 5, 'Advanced Industry': 5, 'Mass Production': 5, 'Advanced Mass Production': 4, 'Laboratory Operation': 5, 'Advanced Laboratory Operation': 4, 'Metallurgy': 5, 'Research': 5, 'Science': 5, 'Reprocessing': 4, 'Reprocessing Efficiency': 4, 'Supply Chain Management': 3, 'Accounting': 5, 'Broker Relations': 5, 'Advanced Broker Relations': 4}, 'Mission Running': {'Spaceship Command': 5, 'Drones': 5, 'Shield Management': 5, 'Shield Operation': 4, 'Hull Upgrades': 5, 'Mechanics': 5, 'Repair Systems': 4, 'Tactical Shield Manipulation': 3, 'Target Management': 4, 'Long Range Targeting': 4, 'Signature Analysis': 4, 'Social': 4, 'Connections': 4, 'Negotiation': 4, 'Diplomacy': 4}, 'PVP': {'Spaceship Command': 5, 'Gunnery': 5, 'Missile Launcher Operation': 5, 'Drones': 5, 'Evasive Maneuvering': 5, 'Afterburner': 5, 'High Speed Maneuvering': 4, 'Propulsion Jamming': 4, 'Electronic Warfare': 4, 'Weapon Disruption': 4, 'Sensor Linking': 4, 'Signature Analysis': 4, 'Target Management': 4, 'Shield Management': 4, 'Hull Upgrades': 4, 'Criminal Connections': 4, 'DED Connections': 4, 'Fast Talk': 4, 'CPU Management': 5, 'Power Grid Management': 5, 'Capacitor Management': 4, 'Capacitor Systems Operation': 4, 'Mechanics': 5, 'Shield Operation': 4, 'Long Range Targeting': 4, 'Navigation': 5, 'Warp Drive Operation': 5}, 'Quality of Life': {'CPU Management': 5, 'Power Grid Management': 5, 'Weapon Upgrades': 5, 'Advanced Weapon Upgrades': 4, 'Navigation': 5, 'Warp Drive Operation': 5, 'Fuel Conservation': 4, 'Acceleration Control': 4, 'Cybernetics': 4, 'Infomorph Psychology': 4, 'Broker Relations': 4, 'Trade': 4, 'Accounting': 4, 'Jury Rigging': 4, 'Capacitor Management': 4, 'Capacitor Systems Operation': 4}, 'Exploration': {'Astrometrics': 5, 'Astrometric Rangefinding': 4, 'Astrometric Pinpointing': 4, 'Hacking': 4, 'Archaeology': 4, 'Astrometric Acquisition': 3, 'Survey': 3}}
 
 # name -> type_id, resolved directly (not via fuzzy search)
 SKILL_TYPE_IDS = {
@@ -548,6 +548,20 @@ FULL_SKILL_NAMES = {
         'Survey',
     ],
     'Mining': [
+        'Spaceship Command',
+        'CPU Management',
+        'Power Grid Management',
+        'Capacitor Management',
+        'Capacitor Systems Operation',
+        'Mechanics',
+        'Hull Upgrades',
+        'Shield Management',
+        'Shield Operation',
+        'Long Range Targeting',
+        'Signature Analysis',
+        'Navigation',
+        'Evasive Maneuvering',
+        'Warp Drive Operation',
         'Abyssal Ore Processing',
         'Advanced Mass Reactions',
         'Arkonor Processing',
@@ -1033,6 +1047,10 @@ FULL_SKILL_NAMES = {
         'Criminal Connections',
         'DED Connections',
         'Fast Talk',
+        'CPU Management',
+        'Power Grid Management',
+        'Capacitor Management',
+        'Capacitor Systems Operation',
         'Acceleration Control',
         'Advanced Armor Layering',
         'Advanced Doomsday Operation',
