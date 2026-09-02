@@ -136,6 +136,14 @@
   .about-trigger:hover { color: var(--accent); }
   .about-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  .about-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 4, 8, 0.6);
+    z-index: 19;
+  }
+  .about-backdrop[hidden] { display: none; }
+
   .about-panel {
     position: absolute;
     top: 0;
@@ -971,6 +979,7 @@
   <button class="dash-tab-btn" data-tab="corp">Corporation</button>
   <button type="button" class="about-trigger" id="about-trigger">About</button>
 
+  <div class="about-backdrop" id="about-backdrop" hidden></div>
   <div class="about-panel" id="about-panel" hidden>
     <button type="button" class="about-close" id="about-close" aria-label="Close about panel">&times;</button>
     <div class="about-row"><strong>New Eden Terminal</strong> <span class="num">v1.0.0</span> — released September 1, 2026</div>
@@ -2411,15 +2420,14 @@ document.getElementById("character-select").addEventListener("change", async e =
 const aboutTrigger = document.getElementById("about-trigger");
 const aboutPanel = document.getElementById("about-panel");
 const aboutClose = document.getElementById("about-close");
-aboutTrigger.addEventListener("click", () => { aboutPanel.hidden = false; });
-aboutClose.addEventListener("click", () => { aboutPanel.hidden = true; });
+const aboutBackdrop = document.getElementById("about-backdrop");
+function openAboutPanel() { aboutPanel.hidden = false; aboutBackdrop.hidden = false; }
+function closeAboutPanel() { aboutPanel.hidden = true; aboutBackdrop.hidden = true; }
+aboutTrigger.addEventListener("click", openAboutPanel);
+aboutClose.addEventListener("click", closeAboutPanel);
+aboutBackdrop.addEventListener("click", closeAboutPanel);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !aboutPanel.hidden) aboutPanel.hidden = true;
-});
-document.addEventListener("click", (e) => {
-  if (aboutPanel.hidden) return;
-  if (aboutPanel.contains(e.target) || aboutTrigger.contains(e.target)) return;
-  aboutPanel.hidden = true;
+  if (e.key === "Escape" && !aboutPanel.hidden) closeAboutPanel();
 });
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
