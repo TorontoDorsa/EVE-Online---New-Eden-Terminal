@@ -304,10 +304,12 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
     """Up to `limit` tips about ship access, built from a character's real
     trained-skill levels against `ship_requirements` (a {ship_name:
     {"requires": [(skill_name, level), ...], "stats": {...}}} dict, e.g.
-    ship_data.MINING_SHIPS). Ships already flyable get a confirming tip;
-    the closest not-yet-flyable ships get a "N levels away" tip, ranked by
-    fewest levels needed first. Each tip is a {"text", "why"} dict — `why`
-    gives the ship's complete real requirement list, not just the gap.
+    ship_data.MINING_SHIPS). The closest not-yet-flyable ships get a
+    "N levels away" tip, ranked by fewest levels needed first — these are
+    forward-looking, so already-flyable ships are omitted unless every
+    tracked ship is already flyable, in which case a single confirming tip
+    is returned instead. Each tip is a {"text", "why"} dict — `why` gives
+    the ship's complete real requirement list, not just the gap.
 
     `current_stats` is an optional dict of the character's own CURRENT
     ship's real stats (e.g. {"ore_hold_capacity": 4000.0}, from
@@ -352,13 +354,14 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
         return ""
 
     tips = []
-    if already_flyable:
+    if not gaps and already_flyable:
         tips.append({
-            "text": f"You can already fly: {', '.join(already_flyable)}.",
+            "text": f"You can already fly every ship tracked here: {', '.join(already_flyable)}.",
             "why": (
                 "Based on comparing your trained skill levels against each ship's real "
                 "ESI-listed skill requirements (the same requiredSkill/requiredSkillLevel "
-                "dogma attributes the in-game fitting window uses) — not a guessed list."
+                "dogma attributes the in-game fitting window uses) — not a guessed list. "
+                "Nothing left to train toward in this list."
             ),
         })
     for levels_needed, ship_name, missing, full_reqs, stats in gaps:

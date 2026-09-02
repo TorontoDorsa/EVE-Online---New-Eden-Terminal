@@ -116,11 +116,62 @@
   /* ---- top-level tabs ---- */
 
   .dash-tabs {
+    position: relative;
     display: flex;
     gap: 28px;
     border-bottom: 1px solid var(--border);
     margin-bottom: 28px;
   }
+  .about-trigger {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    padding: 0 2px 12px;
+    margin-left: auto;
+  }
+  .about-trigger:hover { color: var(--accent); }
+  .about-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .about-panel {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 20;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 44px 18px 20px;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .about-panel[hidden] { display: none; }
+  .about-row {
+    font-size: 13px;
+    color: var(--text);
+  }
+  .about-row a { color: var(--accent); text-decoration: none; }
+  .about-row a:hover { text-decoration: underline; }
+  .about-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 6px;
+  }
+  .about-close:hover { color: var(--accent); }
+  .about-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .dash-tab-btn {
     background: transparent;
     border: none;
@@ -918,6 +969,14 @@
   <button class="dash-tab-btn" data-tab="missions">Mission Running</button>
   <button class="dash-tab-btn" data-tab="plans">Skills</button>
   <button class="dash-tab-btn" data-tab="corp">Corporation</button>
+  <button type="button" class="about-trigger" id="about-trigger">About</button>
+
+  <div class="about-panel" id="about-panel" hidden>
+    <button type="button" class="about-close" id="about-close" aria-label="Close about panel">&times;</button>
+    <div class="about-row"><strong>New Eden Terminal</strong> <span class="num">v1.0.0</span> — released September 1, 2026</div>
+    <div class="about-row"><a href="https://github.com/TorontoDorsa/EVE-Online---New-Eden-Terminal" target="_blank" rel="noopener noreferrer">github.com/TorontoDorsa/EVE-Online---New-Eden-Terminal</a></div>
+    <div class="about-row">Support: <a href="mailto:torontodorsa@gmail.com">torontodorsa@gmail.com</a></div>
+  </div>
 </nav>
 
 <div class="dash-tab-panel" id="tab-overview">
@@ -1246,6 +1305,11 @@
 <div class="dash-tab-panel" id="tab-missions">
 
 <section>
+  <div class="section-title">What's Next</div>
+  <div class="panel" id="tips-missions"></div>
+</section>
+
+<section>
   <div class="section-title">Current State<sup class="src-ref"><a href="#src-1">1</a></sup></div>
   <div id="missions-permissions" style="display:flex; flex-direction:column; gap:8px; margin-bottom:12px;"></div>
   <div class="stat-grid" id="missions-stat-grid">
@@ -1269,11 +1333,6 @@
       <div class="stat-sub">missions + bounties, same window</div>
     </div>
   </div>
-</section>
-
-<section>
-  <div class="section-title">What's Next</div>
-  <div class="panel" id="tips-missions"></div>
 </section>
 
 </div>
@@ -1748,9 +1807,9 @@ function render() {
   warBlock.innerHTML = `
     <span class="status-pill ${warClass}">${warLabel}</span>
     <div class="pi-placeholder" style="margin-top:10px;">
-      ESI has no endpoint that lists active wars for a specific corporation or alliance — only a global
-      recent-wars feed you'd have to scan war-by-war for a match. War-eligibility above is the one
-      reliable war signal ESI exposes directly.
+      We can't show a list of your corp's current wars — EVE's data doesn't offer a
+      lookup for that, only a giant feed of every war in the game with no way to filter
+      it to just yours. The war-eligible status above is the only war info we can show reliably.
     </div>`;
 
   const structBlock = document.getElementById("corp-structures-block");
@@ -2342,6 +2401,20 @@ document.getElementById("character-select").addEventListener("change", async e =
   } catch (err) {
     showBanner(`Switch request failed: ${err}`, true);
   }
+});
+
+const aboutTrigger = document.getElementById("about-trigger");
+const aboutPanel = document.getElementById("about-panel");
+const aboutClose = document.getElementById("about-close");
+aboutTrigger.addEventListener("click", () => { aboutPanel.hidden = false; });
+aboutClose.addEventListener("click", () => { aboutPanel.hidden = true; });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !aboutPanel.hidden) aboutPanel.hidden = true;
+});
+document.addEventListener("click", (e) => {
+  if (aboutPanel.hidden) return;
+  if (aboutPanel.contains(e.target) || aboutTrigger.contains(e.target)) return;
+  aboutPanel.hidden = true;
 });
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
