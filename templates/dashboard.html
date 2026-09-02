@@ -2332,6 +2332,7 @@ async function refreshStatus(isRetry) {
     if (data.logged_in) {
       el.textContent = "● LOGGED IN";
       el.className = "logged-in";
+      logoutBtn.textContent = "Logout";
       logoutBtn.disabled = false;
       setRefreshButtonsEnabled(true);
       // Paint instantly from cache if there is one (no blank screen while
@@ -2347,9 +2348,13 @@ async function refreshStatus(isRetry) {
     } else {
       el.textContent = "● NOT LOGGED IN";
       el.className = "";
-      logoutBtn.disabled = true;
+      logoutBtn.textContent = "Login with EVE SSO";
+      logoutBtn.disabled = false;
       setRefreshButtonsEnabled(false);
-      showBanner('Not logged in — choose "+ Add character…" to load your dashboard.', false);
+      showBanner(
+        "Not logged in — add a character to load your dashboard.", false,
+        { label: "Add character…", onClick: () => addCharacter() }
+      );
     }
   } catch (e) {
     if (!isRetry) {
@@ -2418,6 +2423,10 @@ document.addEventListener("click", (e) => {
 });
 
 document.getElementById("logout-btn").addEventListener("click", async () => {
+  if (!isLoggedIn) {
+    await addCharacter();
+    return;
+  }
   const el = document.getElementById("login-status");
   el.textContent = "● LOGGING OUT…";
   el.className = "logging-in";
