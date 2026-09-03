@@ -101,7 +101,7 @@ class SetupWindow:
         body = tk.Label(
             frame, justify="left", bg=BG, fg=TEXT, wraplength=760, font=("Segoe UI", 9),
             text=(
-                "This tool talks to EVE Online's ESI API on your behalf, which means it "
+                "This tool talks to EVE Online's servers on your behalf, which means it "
                 "needs its own free developer application registered under your account — "
                 "your login never touches anyone else's app or server.\n\n"
                 "1. Click \"Open EVE Developer Portal\" below and sign in with your EVE account.\n"

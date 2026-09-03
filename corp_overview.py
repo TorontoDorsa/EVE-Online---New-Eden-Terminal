@@ -84,21 +84,22 @@ def get_corp_structures_data(corp_id):
     except requests.HTTPError as e:
         code = e.response.status_code if e.response is not None else None
         scope = "esi-corporations.read_structures.v1"
+        label = "corp structures access"
         if code == 401 and scope in auth.DEFAULT_SCOPES:
-            reason = f"requires the {scope} scope, which isn't authorized on this login — log in again to grant it"
+            reason = f"requires {label}, which isn't authorized on this login — log in again to grant it"
             fixable = True
         elif code == 401:
             reason = (
-                f"requires the {scope} scope, which this app doesn't currently request during "
+                f"requires {label}, which this app doesn't currently request during "
                 f"login — logging in again won't grant it; the app itself needs to be updated to "
-                f"ask for that scope first"
+                f"ask for that first"
             )
             fixable = False
         elif code == 403:
             reason = "requires Director-level corporation roles — logging in again won't help, since this depends on your character's corp role, not the login itself"
             fixable = False
         else:
-            reason = f"ESI returned HTTP {code}"
+            reason = f"EVE's servers returned an error (HTTP {code})"
             fixable = False
         return {"available": False, "reason": reason, "fixable_by_login": fixable, "structures": []}
     except requests.RequestException as e:

@@ -264,7 +264,7 @@ def rank_skill_tips(rows, limit=3, category_label="these skills", context=None):
     unquantified.sort(key=lambda c: (not c[0], -c[1]))
 
     def _why(r):
-        base = (r.get("description") or "").strip() or "No further detail available from ESI for this skill."
+        base = (r.get("description") or "").strip() or "No further detail available for this skill."
         extra = context.get(r["name"], {}).get("why")
         return f"{base} {extra}" if extra else base
 
@@ -362,9 +362,8 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
             "text": f"You can already fly every ship tracked here: {', '.join(already_flyable)}.",
             "why": (
                 "Based on comparing your trained skill levels against each ship's real "
-                "ESI-listed skill requirements (the same requiredSkill/requiredSkillLevel "
-                "dogma attributes the in-game fitting window uses) — not a guessed list. "
-                "Nothing left to train toward in this list."
+                "skill requirements — the same ones the in-game fitting window shows — "
+                "not a guessed list. Nothing left to train toward in this list."
             ),
         })
     # Dedupe by missing-skill signature — with hundreds of candidate ships

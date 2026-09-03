@@ -1042,7 +1042,7 @@
     <h3>Your PLEX Position<sup class="src-ref"><a href="#src-2">2</a><a href="#src-4">4</a><a href="#src-6">6</a></sup></h3>
     <div class="plex-input-row">
       <div class="field">
-        <label for="plex-vault-input">PLEX Vault balance (ESI can't see this — enter it yourself)</label>
+        <label for="plex-vault-input">PLEX Vault balance (the game's data doesn't include this — enter it yourself)</label>
         <input type="number" id="plex-vault-input" min="0" step="1">
       </div>
       <button id="plex-recalc-btn">Calculate</button>
@@ -1811,7 +1811,7 @@ function render() {
   homeBlock.innerHTML = co.home.available
     ? `<div class="stat-value" style="font-size:16px;">${co.home.name}</div>
        <div class="stat-sub">${co.home.system_name} system</div>`
-    : `<div class="pi-placeholder">Home base couldn't be resolved from ESI — it may be a player-owned
+    : `<div class="pi-placeholder">Home base couldn't be resolved right now — it may be a player-owned
        structure this login doesn't have docking access to, rather than an NPC station.</div>`;
 
   const warBlock = document.getElementById("corp-war-block");

@@ -57,6 +57,21 @@ SCOPE_HINTS = {
     "mining": "esi-industry.read_character_mining.v1",
 }
 
+# Plain-language names for the scopes above — shown to the player instead
+# of the raw esi-x.y.v1 scope string, which means nothing to someone who
+# isn't a developer of this app.
+SCOPE_LABELS = {
+    "wallet": "wallet access",
+    "location": "location access",
+    "ship": "current ship info",
+    "skills": "skills access",
+    "skillqueue": "skill queue access",
+    "assets": "assets access",
+    "blueprints": "blueprints access",
+    "active_jobs": "industry jobs access",
+    "mining": "mining ledger access",
+}
+
 
 def _classify_exception(e, section_key):
     """Turns an exception raised while fetching a scoped section into the
@@ -68,14 +83,15 @@ def _classify_exception(e, section_key):
         code = e.response.status_code if e.response is not None else None
         if code == 401:
             scope = SCOPE_HINTS.get(section_key, "the required scope")
+            label = SCOPE_LABELS.get(section_key, "this permission")
             if scope in auth.DEFAULT_SCOPES:
-                reason = f"This needs the {scope} permission, which isn't authorized on this login — click below to log in again and grant it."
+                reason = f"This needs {label}, which isn't authorized on this login — click below to log in again and grant it."
                 fixable = True
             else:
                 reason = (
-                    f"This needs the {scope} permission, which this app doesn't currently request "
+                    f"This needs {label}, which this app doesn't currently request "
                     f"during login — logging in again won't grant it; the app itself needs to be "
-                    f"updated to ask for that scope first."
+                    f"updated to ask for that first."
                 )
                 fixable = False
         elif code == 403:
@@ -86,10 +102,10 @@ def _classify_exception(e, section_key):
             )
             fixable = False
         else:
-            reason = f"ESI returned HTTP {code}."
+            reason = f"EVE's servers returned an error (HTTP {code})."
             fixable = False
         return {"available": False, "reason": reason, "fixable_by_login": fixable}
-    return {"available": False, "reason": f"ESI request failed: {e}", "fixable_by_login": False}
+    return {"available": False, "reason": f"Couldn't reach EVE's servers: {e}", "fixable_by_login": False}
 
 
 def _scoped(fetch_fn, section_key, default):
@@ -503,7 +519,7 @@ def get_market_order_tips(char_id, limit=3):
     try:
         orders = esi._auth_get(f"/characters/{char_id}/orders/", datasource="tranquility")
     except requests.RequestException:
-        return [{"text": "Couldn't load your open market orders right now.", "why": "The ESI request for open orders failed."}], empty_stats
+        return [{"text": "Couldn't load your open market orders right now.", "why": "The request for your open orders failed."}], empty_stats
 
     if not orders:
         return [{"text": "You have no open market orders.", "why": "/characters/{id}/orders/ returned an empty list for this character."}], empty_stats
@@ -720,7 +736,7 @@ def get_corp_tips(corp_overview_data):
         if tax_rate == 0:
             tips.append({
                 "text": "Your corp's tax rate is 0% — no cut is taken from bounty or other NPC-derived income.",
-                "why": "ESI's tax_rate field is a fraction taken from bounty and other NPC-derived income specifically — it does not apply to mining yield or player-to-player market sales.",
+                "why": "This is a fraction taken from bounty and other NPC-derived income specifically — it does not apply to mining yield or player-to-player market sales.",
             })
         else:
             tips.append({
@@ -728,26 +744,26 @@ def get_corp_tips(corp_overview_data):
                     f"Your corp's tax rate is {tax_rate * 100:.0f}% — this applies to bounty and "
                     f"other NPC-derived income, not to mining yield or market sales directly."
                 ),
-                "why": "ESI's tax_rate field only describes the cut taken from bounty and other NPC-derived income — mining and market sales are unaffected by this figure, so it isn't safe to apply it to those ISK totals.",
+                "why": "This only describes the cut taken from bounty and other NPC-derived income — mining and market sales are unaffected by this figure, so it isn't safe to apply it to those ISK totals.",
             })
 
     wars = corp_overview_data.get("wars") or {}
     if wars.get("war_eligible"):
         tips.append({
             "text": "Your corp is currently war-eligible — worth keeping an eye on zKillboard for hostile activity.",
-            "why": "War eligibility (ESI's war_eligible flag) means another corp or alliance could file a formal wardec against yours, opening mutual PVP outside normal security-status restrictions.",
+            "why": "War eligibility means another corp or alliance could file a formal wardec against yours, opening mutual PVP outside normal security-status restrictions.",
         })
     else:
         tips.append({
             "text": "Your corp isn't currently war-eligible, so a formal wardec against it isn't a live risk right now.",
-            "why": "ESI's war_eligible flag is false — a corp typically becomes war-eligible once it holds structures or meets other CONCORD criteria, none of which currently apply here.",
+            "why": "Your corp currently isn't war-eligible — a corp typically becomes war-eligible once it holds structures or meets other CONCORD criteria, none of which currently apply here.",
         })
 
     home = corp_overview_data.get("home") or {}
     if home.get("available"):
         tips.append({
             "text": f"Corp home base is {home.get('name')} in {home.get('system_name')}.",
-            "why": "This is the corp's registered home station/structure as reported by ESI's corporation info endpoint.",
+            "why": "This is the corp's registered home station/structure as reported by the game's own corporation records.",
         })
 
     structures = corp_overview_data.get("structures") or {}
@@ -757,13 +773,25 @@ def get_corp_tips(corp_overview_data):
                 "Structure fuel status isn't visible without Director-level corp roles — "
                 "ask a director to check the fuel bunkers directly if that matters to you."
             ),
-            "why": "ESI's corporation structures endpoint (esi-corporations.read_structures.v1) only returns data for characters holding a Director role in the corp — this character doesn't currently have one, so the app can't fetch it on your behalf.",
+            "why": "Structure data is only available to characters holding a Director role in the corp — this character doesn't currently have one, so the app can't fetch it on your behalf.",
         })
 
     return tips or [{"text": "No corp data available to build tips from.", "why": "The corp overview fetch returned no usable data."}]
 
 
 _PVP_ACTIVITY_WINDOW_DAYS = 90
+
+
+def _ship_display_label(ship):
+    """"{custom name} ({hull type})" for tip text, e.g. "Wayfinder
+    (Retriever)" — falls back to whichever single value is actually known
+    rather than showing empty parens (a scope gap can leave either one
+    missing)."""
+    name = ship.get("ship_name")
+    type_name = ship.get("type_name")
+    if name and type_name:
+        return f"{name} ({type_name})"
+    return name or type_name or "your ship"
 
 
 def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, zkill, net_isk, market_stats, fit_data):
@@ -828,7 +856,7 @@ def _build_character_profile(skill_plans, mining_breakdown, active_jobs, ship, z
         "pvp_activity": {"kills": recent_kills, "losses": recent_losses, "window_days": _PVP_ACTIVITY_WINDOW_DAYS},
         "ship_stats": ship.get("hull_stats") or {},
         "market_activity": market_stats,
-        "current_fit": {"ship_name": ship.get("ship_name") or "your ship", "modules": fit_data},
+        "current_fit": {"ship_name": _ship_display_label(ship), "modules": fit_data},
     }
 
 
@@ -914,7 +942,7 @@ def _apply_ship_hull_bonuses(context, ship, curated_ships, rows):
     ship_entry = curated_ships.get(ship.get("type_name"))
     if not ship_entry:
         return context
-    ship_label = ship.get("ship_name") or ship.get("type_name") or "your ship"
+    ship_label = _ship_display_label(ship)
     rows_by_name = {r["name"]: r for r in rows}
     for skill_name, bonus_lines in ship_entry.get("skill_bonuses", {}).items():
         row = rows_by_name.get(skill_name)
@@ -962,8 +990,8 @@ def _mining_context(profile):
             "factor": 1.0 + relevance(ore_isk),
             "why": (
                 "This specifically reduces risk while mining Mercoxit — there's no reliable way to "
-                "check that against your mining history, since ESI doesn't expose which ore variant "
-                f"triggers it. For context, you've mined {ore_isk:,.0f} ISK of ore overall in the last {days} days."
+                "check that against your mining history, since the game's data doesn't expose which "
+                f"ore variant triggers it. For context, you've mined {ore_isk:,.0f} ISK of ore overall in the last {days} days."
             ),
         },
     }
@@ -1404,11 +1432,28 @@ def _same_module_family(name_a, name_b):
     return longer[-len(shorter):] == shorter
 
 
-def _fit_upgrade_tips(fit_data, trained, limit=3):
-    """Skills tab — for each real fitted module (or loaded charge/carried
-    drone — same "active gear" scope get_current_fit_data already uses),
-    is there a genuinely better variant available (e.g. Miner I -> Miner
-    II), and does the character have the skill to fit it? Not a guessed
+_FIT_UPGRADE_TAB_PRECEDENCE = ("Mining", "Industry", "PVP", "Mission Running")
+
+
+def _fit_upgrade_tab(required_skills):
+    """Which tab a fit-upgrade tip belongs to, based on the upgrade
+    module's real required skills — checked against the same curated
+    category lists (skill_plan.FULL_SKILL_NAMES) used everywhere else in
+    this app, in a fixed precedence order, first match wins. Falls back
+    to "Skills" when none of the skills land in any of the four activity
+    tabs (e.g. a rig requiring only a generic engineering skill)."""
+    skill_names = {name for name, _level in required_skills}
+    for category in _FIT_UPGRADE_TAB_PRECEDENCE:
+        if skill_names & set(skill_plan.FULL_SKILL_NAMES[category]):
+            return category
+    return "Skills"
+
+
+def _fit_upgrade_tips(fit_data, trained, limit_per_tab=2):
+    """For each real fitted module (or loaded charge/carried drone — same
+    "active gear" scope get_current_fit_data already uses), is there a
+    genuinely better variant available (e.g. Miner I -> Miner II), and
+    does the character have the skill to fit it? Not a guessed
     stat comparison — uses the real market-group "Variations"
     relationship ESI exposes (the exact same grouping the in-game
     fitting window's own Variations tab shows: Tech I/II/Storyline/
@@ -1419,17 +1464,22 @@ def _fit_upgrade_tips(fit_data, trained, limit=3):
     false positives this caught during testing), then checks the real
     skill gap against it.
 
-    Two distinct tip flavors, in priority order: "you already qualify —
-    go refit" (every required skill is already trained, so this costs
-    nothing to act on) ranks above "train X to unlock this upgrade"
-    (a real gap remains)."""
+    Each tip is routed to the tab it's actually about via
+    _fit_upgrade_tab() — a mining module's upgrade lands on Mining, a
+    shield/weapon/drone's on PVP, etc. — rather than every result piling
+    onto the Skills tab regardless of subject. Within each tab: "you
+    already qualify — go refit" (every required skill is already
+    trained, so this costs nothing to act on) ranks above "train X to
+    unlock this upgrade" (a real gap remains). Returns {category:
+    [tips]} with only non-empty categories present, each independently
+    capped at `limit_per_tab`."""
     market_group_ids = set()
     for module in fit_data:
         mgid = _module_type_info(module["type_id"]).get("market_group_id")
         if mgid:
             market_group_ids.add(mgid)
     if not market_group_ids:
-        return []
+        return {}
 
     sibling_ids = set()
     with ThreadPoolExecutor(max_workers=10) as ex:
@@ -1439,8 +1489,8 @@ def _fit_upgrade_tips(fit_data, trained, limit=3):
         list(ex.map(_module_type_info, sibling_ids))
 
     seen_pairs = set()
-    ready_to_refit = []
-    need_training = []
+    by_tab_ready = {}
+    by_tab_training = {}
 
     for module in fit_data:
         current = _module_type_info(module["type_id"])
@@ -1482,13 +1532,14 @@ def _fit_upgrade_tips(fit_data, trained, limit=3):
             "(the same market-group \"Variations\" relationship the in-game fitting "
             "window shows), ranked by CCP's own tech/meta level, not a guessed stat comparison."
         )
+        tab = _fit_upgrade_tab(best["required_skills"])
         if missing:
-            need_training.append({
+            by_tab_training.setdefault(tab, []).append({
                 "text": f"{module['name']} has a real upgrade: {best['name']} — still need {', '.join(missing)}.",
                 "why": why,
             })
         else:
-            ready_to_refit.append({
+            by_tab_ready.setdefault(tab, []).append({
                 "text": (
                     f"You already qualify for {best['name']} — a real upgrade over the "
                     f"{module['name']} currently fitted. Consider refitting."
@@ -1496,7 +1547,10 @@ def _fit_upgrade_tips(fit_data, trained, limit=3):
                 "why": f"{why} Every skill it requires is already trained.",
             })
 
-    return (ready_to_refit + need_training)[:limit]
+    return {
+        tab: (by_tab_ready.get(tab, []) + by_tab_training.get(tab, []))[:limit_per_tab]
+        for tab in set(by_tab_ready) | set(by_tab_training)
+    }
 
 
 _EMPTY_SKILL_PLANS = {cat: [] for cat in ("Mining", "Industry", "PVP", "Quality of Life", "Mission Running", "Exploration")}
@@ -1627,9 +1681,9 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
                 context=_apply_magic14_framing(theme_context),
             )
             fit_completeness_tips = _fit_completeness_tips(
-                fit_data, trained_skills, ship.get("ship_name") or "your ship"
+                fit_data, trained_skills, _ship_display_label(ship)
             )
-            fit_upgrade_tips = _fit_upgrade_tips(fit_data, trained_skills, limit=2)
+            fit_upgrade_tips = _fit_upgrade_tips(fit_data, trained_skills, limit_per_tab=2)
             mission_running_stats = {
                 "mission_isk": profile["mission_activity"]["mission_isk"],
                 "mission_count": profile["mission_activity"]["mission_count"],
@@ -1641,7 +1695,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             unavailable_tip = [{"text": "Skill-based tips aren't available right now.", "why": skills_perm["reason"]}]
             mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = mission_skill_tips = unavailable_tip
             fit_completeness_tips = []
-            fit_upgrade_tips = []
+            fit_upgrade_tips = {}
             mission_running_stats = {
                 "mission_isk": 0, "mission_count": 0, "bounty_isk": 0, "bounty_count": 0,
                 "window_days": mining_days,
@@ -1650,13 +1704,15 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         tips = {
             "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
                 trained_skills, ALL_MINING_SHIPS, limit=2, current_stats=ship.get("hull_stats")
-            ),
+            ) + fit_upgrade_tips.get("Mining", []),
             "Industry": industry_skill_tips + market_order_tips + skill_plan.rank_ship_tips(
                 trained_skills, ALL_INDUSTRY_SHIPS, limit=1
-            ),
-            "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ALL_PVP_SHIPS, limit=2),
-            "Mission Running": mission_skill_tips,
-            "Skills": skills_tab_tips + fit_completeness_tips + fit_upgrade_tips,
+            ) + fit_upgrade_tips.get("Industry", []),
+            "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(
+                trained_skills, ALL_PVP_SHIPS, limit=2
+            ) + fit_upgrade_tips.get("PVP", []),
+            "Mission Running": mission_skill_tips + fit_upgrade_tips.get("Mission Running", []),
+            "Skills": skills_tab_tips + fit_completeness_tips + fit_upgrade_tips.get("Skills", []),
             "Corporation": get_corp_tips(corp_overview_data),
         }
 
