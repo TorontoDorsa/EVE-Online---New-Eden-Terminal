@@ -1,0 +1,21 @@
+name: Compile check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  py-compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Compile every tracked .py file
+        shell: bash
+        run: python -m py_compile $(git ls-files "*.py")
