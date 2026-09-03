@@ -1247,11 +1247,16 @@ def _pvp_context(profile, ship, pvp_rows):
         context["DED Connections"] = {"factor": 1.0 + (0.3 if bounty_isk > 0 else 0.0), "why": why}
 
     # Any PVP skill without a specific stat/hardpoint/bounty tie-in still
-    # gets the real activity signal folded into its ranking rather than
-    # nothing.
+    # gets an honest why — the real activity signal when there is one,
+    # or an honest "no activity yet" note when there isn't (mirrors
+    # Mining/Industry, which never leave a skill with no personalized
+    # reasoning at all just because the character hasn't done the
+    # activity yet). activity_boost is already 0.0 when has_activity is
+    # False, so this doesn't change ranking for an inactive character —
+    # only fixes the missing `why` text.
     for row in pvp_rows:
         name = row["name"]
-        if name not in context and has_activity:
+        if name not in context:
             context[name] = {"factor": 1.0 + activity_boost, "why": activity_sentence.strip()}
 
     return context
@@ -1260,34 +1265,54 @@ def _pvp_context(profile, ship, pvp_rows):
 _SKILLS_TAB_CATEGORIES = ("Quality of Life", "Exploration")
 
 
+_SKILLS_TAB_GENERIC_WHY = {
+    "Quality of Life": (
+        "This is a general utility skill that helps regardless of what you're actually flying "
+        "or doing right now — it isn't tied to one specific playstyle."
+    ),
+    "Exploration": (
+        "There's no reliable way to check real exploration activity from the game's data (no "
+        "scan/hack/relic-site signal is exposed), so this is based on skill investment alone, "
+        "not confirmed activity."
+    ),
+}
+
+
 def _skills_theme_context(profile):
-    """New: Skills-tab tips previously got zero personalization at all.
-    Boosts skills belonging to the character's dominant real playstyle
-    category (blended skill-training ratio + real activity confirmation
-    from _build_character_profile) when that dominant category is one of
-    the ones actually shown on this tab, and explains the detected theme
-    — honestly distinguishing skill-investment-only from
-    activity-confirmed, rather than implying more certainty than the data
-    supports."""
+    """Skills-tab tips (Quality of Life + Exploration core skills) always
+    get an honest why, not just when the character's single overall
+    dominant training category happens to be one of these two — which is
+    rare (Mining/Industry/PVP/Mission Running are far more commonly
+    "dominant" by skill ratio for a focused character), and would
+    otherwise leave every Quality of Life/Exploration skill with nothing
+    but its bare description — the same class of gap found and fixed in
+    _pvp_context(). When the dominant category IS one of these two, its
+    core skills get the stronger theme-match boost/why instead of the
+    generic fallback."""
     dominant = profile["dominant_category"]
-    if not dominant or dominant not in _SKILLS_TAB_CATEGORIES:
-        return {}
+    context = {}
+    if dominant in _SKILLS_TAB_CATEGORIES:
+        info = profile["theme"][dominant]
+        pct = info["skill_ratio"] * 100
+        if info["confirmed_by_activity"]:
+            why = (
+                f"Your training leans heavily {dominant} ({pct:.0f}% of core skills at target), and your "
+                f"real activity backs it up — this keeps that going."
+            )
+        else:
+            why = (
+                f"You've trained heavily into {dominant} ({pct:.0f}% of core skills at target), but no "
+                f"matching real activity showed up recently — these skills are ready whenever you use them."
+            )
+        entry = {"factor": 1.5, "why": why}
+        context.update({name: entry for name in skill_plan.CORE_TARGETS[dominant]})
 
-    info = profile["theme"][dominant]
-    pct = info["skill_ratio"] * 100
-    if info["confirmed_by_activity"]:
-        why = (
-            f"Your training leans heavily {dominant} ({pct:.0f}% of core skills at target), and your "
-            f"real activity backs it up — this keeps that going."
-        )
-    else:
-        why = (
-            f"You've trained heavily into {dominant} ({pct:.0f}% of core skills at target), but no "
-            f"matching real activity showed up recently — these skills are ready whenever you use them."
-        )
+    for category, generic_why in _SKILLS_TAB_GENERIC_WHY.items():
+        for name in skill_plan.CORE_TARGETS[category]:
+            if name not in context:
+                context[name] = {"factor": 1.0, "why": generic_why}
 
-    entry = {"factor": 1.5, "why": why}
-    return {name: entry for name in skill_plan.CORE_TARGETS[dominant]}
+    return context
 
 
 # CCP's own real, named set — verified live from
