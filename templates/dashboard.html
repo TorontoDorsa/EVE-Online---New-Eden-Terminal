@@ -1997,6 +1997,11 @@ function renderChart(daily, ids, emptyLabel) {
     svg.outerHTML = `<div class="stat-sub">No daily ${emptyLabel || "mining"} data in this window.</div>`;
     return;
   }
+  // renderChart() can run more than once for the same SVG (e.g. an
+  // instant cached paint followed by the real fetch's re-render) — clear
+  // whatever's already there first, or gridlines/bars/labels pile up on
+  // top of the previous render instead of replacing it.
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
 
   const W = 760, H = 200, padBottom = 24, padTop = 10;
   const plotH = H - padBottom - padTop;
