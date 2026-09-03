@@ -1600,6 +1600,7 @@ function render() {
   } else if (!assets || assets.total_items === 0) {
     assetsBlock.innerHTML = '<div class="stat-sub">No assets found.</div>';
   } else {
+    assetsBlock.innerHTML = "";
     const summary = document.createElement("div");
     summary.className = "asset-summary-row";
     summary.innerHTML = `<span>Total items: <b>${assets.total_items.toLocaleString("en-US")}</b></span>
@@ -1673,6 +1674,7 @@ function render() {
   } else if (DATA.active_jobs.length === 0) {
     jobsList.innerHTML = '<div class="stat-sub">No active industry jobs.</div>';
   } else {
+    jobsList.innerHTML = "";
     const now = new Date();
     DATA.active_jobs.forEach(j => {
       const end = new Date(j.end_date);
@@ -1736,6 +1738,7 @@ function render() {
   if (DATA.jita_prices.length === 0) {
     jitaTable.innerHTML = `<tr><td colspan="3" class="stat-sub">No mined resources to price yet.</td></tr>`;
   } else {
+    jitaTable.innerHTML = "";
     DATA.jita_prices.forEach(p => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -1757,6 +1760,7 @@ function render() {
   if (mb.by_type.length === 0) {
     resourceTable.innerHTML = `<tr><td colspan="4" class="stat-sub">No mining activity in this window.</td></tr>`;
   } else {
+    resourceTable.innerHTML = "";
     mb.by_type.forEach(r => {
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -1965,6 +1969,7 @@ function renderKillList(elId, zkill, rows, kind, emptyLabel) {
     el.innerHTML = `<div class="stat-sub">${emptyLabel}</div>`;
     return;
   }
+  el.innerHTML = "";
   rows.forEach(r => {
     const dateObj = new Date(r.date);
     const dateLabel = dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
