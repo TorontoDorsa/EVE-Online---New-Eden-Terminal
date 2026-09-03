@@ -115,7 +115,9 @@ runs a system tray icon in the background so there's something to
 click if you want to reopen the dashboard tab, open the
 command-console page as its own native window, or fully quit the app.
 Closing your browser tab does *not* stop the app; the tray icon's Quit
-item does.
+item does. Bookmark the dashboard tab for quick reopening — just make
+sure New Eden Terminal (the tray icon) is actually running first, or
+the bookmark won't have anything to load.
 
 First launch shows a setup screen that walks through registering a
 free EVE developer app (same one-time step as above, just done inside

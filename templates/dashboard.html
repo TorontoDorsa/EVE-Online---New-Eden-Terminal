@@ -822,6 +822,34 @@
   }
   #banner .banner-action:hover { border-color: var(--accent); color: var(--accent); }
 
+  #bookmark-nudge {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid var(--accent-dim);
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  #bookmark-nudge.show { display: flex; }
+  #bookmark-nudge .bookmark-nudge-text { flex: 1; }
+  #bookmark-nudge .bookmark-nudge-text strong { color: var(--text); }
+  #bookmark-nudge .bookmark-nudge-dismiss {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+  #bookmark-nudge .bookmark-nudge-dismiss:hover { color: var(--accent); }
+
   .section-banner {
     display: flex;
     align-items: center;
@@ -953,6 +981,11 @@
 </div>
 
 <div id="banner"></div>
+
+<div id="bookmark-nudge">
+  <span class="bookmark-nudge-text"><strong>Tip:</strong> bookmark this page for quick access — press Ctrl+D (&#8984;D on Mac). If it doesn't load next time, make sure New Eden Terminal is running first (check your system tray).</span>
+  <button type="button" class="bookmark-nudge-dismiss" id="bookmark-nudge-dismiss" aria-label="Dismiss">&times;</button>
+</div>
 
 <div id="loading"><span class="spinner"></span><span id="loading-text">Loading live dashboard data — this can take up to 90 seconds on the first load.</span></div>
 
@@ -2218,6 +2251,7 @@ async function loadDashboard() {
         render();
         document.getElementById("content").className = "show";
         saveDashboardCache(DATA, dataTimestamp, activeCharacterId);
+        maybeShowBookmarkNudge();
         return;
       } catch (e) {
         lastError = e;
@@ -2275,6 +2309,27 @@ function showLoading(text) {
 function hideLoading() {
   document.getElementById("loading").className = "";
 }
+
+const BOOKMARK_NUDGE_STORAGE_KEY = "eve-dashboard-bookmark-nudge-dismissed";
+function maybeShowBookmarkNudge() {
+  let dismissed = false;
+  try {
+    dismissed = localStorage.getItem(BOOKMARK_NUDGE_STORAGE_KEY) === "1";
+  } catch (e) {
+    // storage unavailable — show it every time rather than never
+  }
+  if (!dismissed) {
+    document.getElementById("bookmark-nudge").className = "show";
+  }
+}
+document.getElementById("bookmark-nudge-dismiss").addEventListener("click", () => {
+  document.getElementById("bookmark-nudge").className = "";
+  try {
+    localStorage.setItem(BOOKMARK_NUDGE_STORAGE_KEY, "1");
+  } catch (e) {
+    // ignore — per-viewer convenience only
+  }
+});
 
 document.getElementById("refresh-btn").addEventListener("click", loadDashboard);
 document.getElementById("mining-refresh-btn").addEventListener("click", loadDashboard);
