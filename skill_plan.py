@@ -308,8 +308,11 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
     "N levels away" tip, ranked by fewest levels needed first — these are
     forward-looking, so already-flyable ships are omitted unless every
     tracked ship is already flyable, in which case a single confirming tip
-    is returned instead. Each tip is a {"text", "why"} dict — `why` gives
-    the ship's complete real requirement list, not just the gap.
+    is returned instead. Ships tied on an identical missing-skill list are
+    deduped to one tip (only the closest such ship is named) — with a
+    large candidate pool, several ships often need the exact same single
+    skill. Each tip is a {"text", "why"} dict — `why` gives the ship's
+    complete real requirement list, not just the gap.
 
     `current_stats` is an optional dict of the character's own CURRENT
     ship's real stats (e.g. {"ore_hold_capacity": 4000.0}, from
@@ -364,7 +367,17 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
                 "Nothing left to train toward in this list."
             ),
         })
+    # Dedupe by missing-skill signature — with hundreds of candidate ships
+    # (post all-ships expansion), it's common for several to tie on
+    # needing the exact same skill (e.g. Bantam and Condor both just need
+    # Caldari Frigate I); showing the same missing skill twice in a
+    # 2-3-tip list wastes a slot without adding anything new.
+    seen_signatures = set()
     for levels_needed, ship_name, missing, full_reqs, stats in gaps:
+        signature = tuple(sorted(missing))
+        if signature in seen_signatures:
+            continue
+        seen_signatures.add(signature)
         tips.append({
             "text": (
                 f"You're {levels_needed} level{'s' if levels_needed != 1 else ''} from flying "
@@ -372,6 +385,8 @@ def rank_ship_tips(trained, ship_requirements, limit=3, current_stats=None):
             ),
             "why": f"{ship_name} requires: {', '.join(full_reqs)}.{_stat_delta_sentence(stats)}",
         })
+        if len(tips) >= limit:
+            break
 
     if not tips:
         return [{"text": "No ship data available to compare against.", "why": "No curated ships were provided to check against."}]

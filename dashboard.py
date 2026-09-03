@@ -28,6 +28,17 @@ import mining_report as mr
 import zkillboard
 import corp_overview
 import ship_data
+import ship_data_generated
+
+# Every real, ESI-published Mining/PVP ship (see gen_ship_data.py), merged
+# with the 13 hand-curated ships in ship_data.py — curated entries win on
+# name collision, since they additionally carry wiki-verified
+# `skill_bonuses` that the generated set doesn't attempt to derive. Used
+# only for skill_plan.rank_ship_tips()'s ship-progression tips; the
+# `_apply_ship_hull_bonuses()` calls below still use ship_data.MINING_SHIPS
+# / PVP_SHIPS directly, since hull-bonus flavor text is curated-only.
+ALL_MINING_SHIPS = {**ship_data_generated.GENERATED_MINING_SHIPS, **ship_data.MINING_SHIPS}
+ALL_PVP_SHIPS = {**ship_data_generated.GENERATED_PVP_SHIPS, **ship_data.PVP_SHIPS}
 
 SECTION = "-" * 60
 
@@ -1470,10 +1481,10 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
 
         tips = {
             "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
-                trained_skills, ship_data.MINING_SHIPS, limit=2, current_stats=ship.get("hull_stats")
+                trained_skills, ALL_MINING_SHIPS, limit=2, current_stats=ship.get("hull_stats")
             ),
             "Industry": industry_skill_tips + market_order_tips,
-            "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ship_data.PVP_SHIPS, limit=2),
+            "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ALL_PVP_SHIPS, limit=2),
             "Mission Running": mission_skill_tips,
             "Skills": skills_tab_tips + fit_completeness_tips,
             "Corporation": get_corp_tips(corp_overview_data),
