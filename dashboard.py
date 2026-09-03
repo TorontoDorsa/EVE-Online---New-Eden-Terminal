@@ -1747,7 +1747,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         )
         blueprints, blueprints_perm = _scoped_result(f_blueprints, "blueprints", {"total": 0, "rows": []})
         current_training, current_training_perm = _scoped_result(
-            f_current_training, "skillqueue", {"training": False, "queue_length": 0}
+            f_current_training, "skillqueue", {"training": False, "queue_length": 0, "queue": []}
         )
         mining, mining_perm = _scoped_result(
             f_mining, "mining",

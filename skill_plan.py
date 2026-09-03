@@ -67,7 +67,11 @@ def get_skill_descriptions(skill_ids):
 
 
 def get_current_training_data(char_id=None):
-    """The skill queue's currently active entry (queue_position 0), if training is running."""
+    """The skill queue's currently active entry (queue_position 0), if
+    training is running, plus the full ordered queue (every entry, real
+    resolved name/level) for an expandable "show full queue" UI — zero
+    extra ESI calls, since the full queue is already fetched here just
+    to find the current entry."""
     if esi.eve_sso_auth is None:
         print("eve_sso_auth.py not found — put it in the same folder as this script.")
         sys.exit(1)
@@ -79,12 +83,23 @@ def get_current_training_data(char_id=None):
         queue = []
 
     if not queue:
-        return {"training": False, "queue_length": 0}
+        return {"training": False, "queue_length": 0, "queue": []}
 
-    current = min(queue, key=lambda q: q["queue_position"])
+    queue_sorted = sorted(queue, key=lambda q: q["queue_position"])
+    full_queue = [
+        {
+            "skill_name": esi.resolve_type_name(q["skill_id"]),
+            "level_roman": ROMAN.get(q["finished_level"], str(q["finished_level"])),
+            "start_date": q.get("start_date"),
+            "finish_date": q.get("finish_date"),
+        }
+        for q in queue_sorted
+    ]
+
+    current = queue_sorted[0]
     if not current.get("finish_date"):
         # Queue exists but is paused — nothing has a start/finish date yet.
-        return {"training": False, "queue_length": len(queue)}
+        return {"training": False, "queue_length": len(queue), "queue": full_queue}
 
     return {
         "training": True,
@@ -94,6 +109,7 @@ def get_current_training_data(char_id=None):
         "start_date": current["start_date"],
         "finish_date": current["finish_date"],
         "queue_length": len(queue),
+        "queue": full_queue,
     }
 
 

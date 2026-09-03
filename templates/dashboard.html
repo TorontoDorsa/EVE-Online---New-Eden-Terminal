@@ -417,6 +417,45 @@
     font-size: 12px;
     color: var(--text-dim);
   }
+  .training-queue-toggle {
+    margin-top: 10px;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .training-queue-toggle:hover { color: var(--accent); }
+  .training-queue-toggle .queue-arrow {
+    display: inline-block;
+    font-size: 9px;
+    transition: transform 0.15s ease;
+  }
+  .training-queue-toggle.expanded .queue-arrow { transform: rotate(180deg); }
+  .training-queue-list {
+    display: none;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+  .training-queue-toggle.expanded + .training-queue-list { display: block; }
+  .training-queue-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    padding: 3px 0;
+  }
+  .training-queue-row .queue-pos { font-family: var(--font-mono); color: var(--text-dim); width: 20px; flex-shrink: 0; }
+  .training-queue-row .queue-skill { flex: 1; color: var(--text); }
+  .training-queue-row .queue-level { font-family: var(--font-mono); color: var(--text-dim); }
+  .training-queue-row.current .queue-skill { color: var(--accent); }
 
   /* ---- assets ---- */
 
@@ -1663,7 +1702,8 @@ function render() {
     trainingBlock.innerHTML = sectionBannerHtml(perms.skillqueue);
   } else if (!t.training) {
     trainingBlock.innerHTML = t.queue_length > 0
-      ? '<div class="stat-sub">Skill queue is paused — ' + t.queue_length + ' skill(s) queued but not training.</div>'
+      ? '<div class="stat-sub">Skill queue is paused — ' + t.queue_length + ' skill(s) queued but not training.</div>' +
+        trainingQueueToggleHtml(t)
       : '<div class="stat-sub">Nothing queued or training right now.</div>';
   } else {
     const now = new Date();
@@ -1684,7 +1724,7 @@ function render() {
         <span>Est. completion: <span class="num">${finishLabel}</span></span>
         <span class="num">${countdown}</span>
       </div>
-      <div class="training-queue-note">${t.queue_length} skill${t.queue_length === 1 ? "" : "s"} in queue</div>`;
+      ${trainingQueueToggleHtml(t)}`;
   }
 
   // skill group browser
@@ -1934,6 +1974,22 @@ function renderPlexPosition(plex, vaultQty) {
   const costEl = document.getElementById("plex-purchase-cost");
   costEl.textContent = formatIsk(purchaseCost) + " ISK";
   costEl.className = "callout-value" + (haveEnough ? " positive" : "");
+}
+
+function trainingQueueToggleHtml(t) {
+  const queue = t.queue || [];
+  if (!queue.length) return "";
+  const rows = queue.map((q, i) => {
+    const current = t.training && i === 0 ? " current" : "";
+    return `<div class="training-queue-row${current}">` +
+      `<span class="queue-pos">${i + 1}.</span>` +
+      `<span class="queue-skill">${escapeAttr(q.skill_name)}</span>` +
+      `<span class="queue-level">${escapeAttr(q.level_roman)}</span>` +
+      `</div>`;
+  }).join("");
+  return `<button type="button" class="training-queue-toggle">` +
+    `${t.queue_length} skill${t.queue_length === 1 ? "" : "s"} in queue <span class="queue-arrow">&#9662;</span>` +
+    `</button><div class="training-queue-list">${rows}</div>`;
 }
 
 function sectionBannerHtml(perm) {
@@ -2354,6 +2410,11 @@ document.addEventListener("click", e => {
     const box = whyBtn.closest(".tip-box");
     box.classList.toggle("expanded");
     whyBtn.textContent = box.classList.contains("expanded") ? "Hide why" : "Learn why";
+    return;
+  }
+  const queueToggle = e.target.closest(".training-queue-toggle");
+  if (queueToggle) {
+    queueToggle.classList.toggle("expanded");
     return;
   }
   const loginBtn = e.target.closest(".section-banner-action");
