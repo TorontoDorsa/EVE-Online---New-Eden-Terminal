@@ -2,7 +2,7 @@
 """
 Generates ship_data_generated.py — every real, published, player-flyable
 ship in the game (not just the 13 hand-picked ones in ship_data.py),
-bucketed into Mining/PVP for skill_plan.rank_ship_tips().
+bucketed into Mining/Industry/PVP for skill_plan.rank_ship_tips().
 
 Run this offline, review its printed audit, then commit the resulting
 ship_data_generated.py. It is NOT imported at dashboard-load time itself —
@@ -16,13 +16,22 @@ bucketed: NOT by ESI ship group name — Venture (an ORE mining frigate) and
 Rifter (a PVP frigate) are BOTH filed under the plain "Frigate" ESI group,
 so group name can't tell them apart. Instead this buckets by the real
 skill(s) a ship requires (skill_plan.rank_ship_tips already ranks ships by
-comparing trained skills against exactly this list) — a ship needing
-"Mining Frigate"/"Mining Barge"/"Exhumers" is Mining; a ship needing a
-racial hull-class skill ("Minmatar Frigate", "Amarr Cruiser", "Minmatar
-Strategic Cruiser", etc.) is PVP. Anything matching neither (freighters,
-haulers, industrials, shuttles, logistics, command ships, force
-auxiliaries, capitals) is excluded from this phase — no tab exists to
-surface them on yet.
+comparing trained skills against exactly this list):
+  - Mining: "Mining Frigate"/"Mining Barge"/"Exhumers"/"Mining Destroyer",
+    plus mining-fleet support hulls ("Industrial Command Ships" — Orca,
+    Porpoise; "Capital Industrial Ships" — Rorqual).
+  - Industry: racial "{Race} Hauler"/"{Race} Freighter", plus ORE/Upwell's
+    own Freighter/Hauler variants, Jump Freighters, and Transport Ships
+    (Deep Space Transports/Blockade Runners).
+  - PVP: a racial hull-class skill ("Minmatar Frigate", "Amarr Cruiser",
+    "Minmatar Strategic Cruiser", "Amarr Titan", etc. — this also covers
+    Supercarriers/Force Auxiliaries, which share the base "{Race} Carrier"
+    skill at a higher level rather than a distinct skill name) or a T2/T3
+    subclass skill as a safety net.
+Anything matching none of these (shuttles, rookie ships, "universal"
+alpha-accessible hulls like Gnosis/Praxis needing only "Spaceship
+Command") is excluded — there's no meaningful skill gap to report for a
+ship that's always instantly flyable.
 
 Required-skill dogma attributes: verified live (2026-09-02) that ships can
 need up to 6 required skills, not just the 3 the existing
@@ -62,6 +71,12 @@ _RACES = ["Amarr", "Caldari", "Gallente", "Minmatar"]
 _PVP_HULL_WORDS = [
     "Frigate", "Destroyer", "Cruiser", "Battlecruiser", "Battleship",
     "Strategic Cruiser", "Tactical Destroyer",
+    # Combat capitals — Supercarriers/Force Auxiliaries share the same
+    # racial Carrier skill as regular Carriers (gated by skill LEVEL, not
+    # a separate skill name), confirmed by an earlier audit run showing
+    # e.g. Aeon (Supercarrier) and Apostle (Force Auxiliary) both listing
+    # only "{Race} Carrier", no distinct "Supercarrier" skill.
+    "Carrier", "Dreadnought", "Titan",
 ]
 PVP_SKILL_NAMES = {f"{race} {hull}" for race in _RACES for hull in _PVP_HULL_WORDS} | {
     # T2/T3 subclass skills, as a safety net in case a ship's `requires`
@@ -69,12 +84,27 @@ PVP_SKILL_NAMES = {f"{race} {hull}" for race in _RACES for hull in _PVP_HULL_WOR
     # skill (not expected, but cheap to guard against).
     "Assault Frigates", "Interceptors", "Covert Ops", "Electronic Attack Ships",
     "Heavy Assault Cruisers", "Heavy Interdiction Cruisers", "Recon Ships",
-    "Interdictors",
+    "Interdictors", "Lancer Dreadnoughts",
 }
 # Verified live (2026-09-02): "Mining Destroyer" is a real skill (Pioneer,
 # Perseverance, Outrider) — not a guess, confirmed via a first generator
 # run whose audit showed these ships excluded for lacking a bucket match.
-MINING_SKILL_NAMES = {"Mining Frigate", "Mining Barge", "Exhumers", "Mining Destroyer"}
+# "Industrial Command Ships" (Orca, Porpoise) and "Capital Industrial
+# Ships" (Rorqual) are mining-fleet support/boost hulls, not combat or
+# pure cargo-hauling — also confirmed from that same audit.
+MINING_SKILL_NAMES = {
+    "Mining Frigate", "Mining Barge", "Exhumers", "Mining Destroyer",
+    "Industrial Command Ships", "Capital Industrial Ships",
+}
+_INDUSTRY_HAULER_WORDS = ["Hauler", "Freighter"]
+INDUSTRY_SKILL_NAMES = {f"{race} {word}" for race in _RACES for word in _INDUSTRY_HAULER_WORDS} | {
+    # Confirmed real from the same audit: ORE's own Freighter/Hauler
+    # variants, Upwell's (Deep Space Transports/Blockade Runners share
+    # "Transport Ships"; Jump Freighters share "Jump Freighters"), and
+    # Noctis (a salvage/hauling utility ship) needing "ORE Hauler".
+    "ORE Freighter", "ORE Hauler", "Upwell Freighter", "Upwell Hauler",
+    "Jump Freighters", "Transport Ships",
+}
 
 
 def _get(path, **params):
@@ -124,6 +154,8 @@ def _bucket_for(requires):
     skill_names = {name for name, _level in requires}
     if skill_names & MINING_SKILL_NAMES:
         return "Mining"
+    if skill_names & INDUSTRY_SKILL_NAMES:
+        return "Industry"
     if skill_names & PVP_SKILL_NAMES:
         return "PVP"
     return None
@@ -137,8 +169,9 @@ def main():
     print(f"  OK — {len(category['groups'])} groups under category 6 'Ship'.")
 
     mining_ships = {}
+    industry_ships = {}
     pvp_ships = {}
-    excluded = []       # (name, requires_skill_names) — no Mining/PVP match
+    excluded = []       # (name, requires_skill_names) — no bucket match
     skipped_no_requires = []
     skipped_unresolved_skill = []
 
@@ -163,6 +196,8 @@ def main():
             entry = {"requires": requires, "stats": stats}
             if bucket == "Mining":
                 mining_ships[name] = entry
+            elif bucket == "Industry":
+                industry_ships[name] = entry
             elif bucket == "PVP":
                 pvp_ships[name] = entry
             else:
@@ -171,11 +206,14 @@ def main():
     print(f"\nMining ships found: {len(mining_ships)}")
     for name in sorted(mining_ships):
         print(f"  {name}: {mining_ships[name]['requires']}")
+    print(f"\nIndustry ships found: {len(industry_ships)}")
+    for name in sorted(industry_ships):
+        print(f"  {name}: {industry_ships[name]['requires']}")
     print(f"\nPVP ships found: {len(pvp_ships)}")
     for name in sorted(pvp_ships):
         print(f"  {name}: {pvp_ships[name]['requires']}")
 
-    print(f"\nExcluded (no Mining/PVP skill match — {len(excluded)}):")
+    print(f"\nExcluded (no bucket match — {len(excluded)}):")
     for name, skills in sorted(excluded):
         print(f"  {name}: requires {skills}")
 
@@ -191,20 +229,26 @@ def main():
         f.write(
             '"""Generated by gen_ship_data.py — do not hand-edit.\n\n'
             "Every real, published ship in the game whose required skill(s) match\n"
-            "a known Mining or PVP ship-license skill name (see gen_ship_data.py's\n"
-            "own docstring for why skill name, not ESI ship group, is the bucketing\n"
-            "signal). Consumed by dashboard.py, merged with the hand-curated 13\n"
-            'ships in ship_data.py (which take precedence on name collision — they\n'
-            'additionally carry wiki-verified `skill_bonuses`, which this file does\n'
-            'not attempt to derive). Regenerate by re-running gen_ship_data.py.\n"""\n\n'
+            "a known Mining, Industry, or PVP ship-license skill name (see\n"
+            "gen_ship_data.py's own docstring for why skill name, not ESI ship\n"
+            "group, is the bucketing signal). Consumed by dashboard.py, merged with\n"
+            'the hand-curated 13 ships in ship_data.py (which take precedence on\n'
+            'name collision — they additionally carry wiki-verified `skill_bonuses`,\n'
+            'which this file does not attempt to derive). Regenerate by re-running\n'
+            'gen_ship_data.py.\n"""\n\n'
         )
         f.write("GENERATED_MINING_SHIPS = ")
         f.write(json.dumps(mining_ships, indent=4))
+        f.write("\n\nGENERATED_INDUSTRY_SHIPS = ")
+        f.write(json.dumps(industry_ships, indent=4))
         f.write("\n\nGENERATED_PVP_SHIPS = ")
         f.write(json.dumps(pvp_ships, indent=4))
         f.write("\n")
 
-    print(f"\nWrote {out_path} — {len(mining_ships)} Mining ships, {len(pvp_ships)} PVP ships.")
+    print(
+        f"\nWrote {out_path} — {len(mining_ships)} Mining ships, "
+        f"{len(industry_ships)} Industry ships, {len(pvp_ships)} PVP ships."
+    )
 
 
 if __name__ == "__main__":

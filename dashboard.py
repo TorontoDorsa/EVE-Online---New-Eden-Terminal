@@ -39,6 +39,9 @@ import ship_data_generated
 # / PVP_SHIPS directly, since hull-bonus flavor text is curated-only.
 ALL_MINING_SHIPS = {**ship_data_generated.GENERATED_MINING_SHIPS, **ship_data.MINING_SHIPS}
 ALL_PVP_SHIPS = {**ship_data_generated.GENERATED_PVP_SHIPS, **ship_data.PVP_SHIPS}
+# No hand-curated Industry ship list exists (the Industry tab never had
+# ship tips before), so this is just the generated set directly.
+ALL_INDUSTRY_SHIPS = ship_data_generated.GENERATED_INDUSTRY_SHIPS
 
 SECTION = "-" * 60
 
@@ -1365,7 +1368,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
         f_corp_overview = pool.submit(corp_overview.get_corp_overview_data, char_id)
         f_ship = pool.submit(get_ship_data, char_id)
         f_active_jobs = pool.submit(get_active_jobs_data, char_id)
-        f_market_order_tips = pool.submit(get_market_order_tips, char_id, 2)
+        f_market_order_tips = pool.submit(get_market_order_tips, char_id, 1)
         f_wallet = pool.submit(esi.get_wallet_balance, char_id)
         f_net_isk = pool.submit(get_net_isk_data, char_id, mining_days)
         f_location = pool.submit(esi.get_location_data, char_id)
@@ -1483,7 +1486,9 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             "Mining": mining_skill_tips + skill_plan.rank_ship_tips(
                 trained_skills, ALL_MINING_SHIPS, limit=2, current_stats=ship.get("hull_stats")
             ),
-            "Industry": industry_skill_tips + market_order_tips,
+            "Industry": industry_skill_tips + market_order_tips + skill_plan.rank_ship_tips(
+                trained_skills, ALL_INDUSTRY_SHIPS, limit=1
+            ),
             "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ALL_PVP_SHIPS, limit=2),
             "Mission Running": mission_skill_tips,
             "Skills": skills_tab_tips + fit_completeness_tips,
