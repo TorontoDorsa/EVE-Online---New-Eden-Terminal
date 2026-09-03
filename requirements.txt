@@ -4,3 +4,4 @@ truststore
 pywebview
 pythonnet
 pystray
+Pillow
