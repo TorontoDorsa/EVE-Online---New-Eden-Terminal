@@ -85,6 +85,18 @@ PVP_SKILL_NAMES = {f"{race} {hull}" for race in _RACES for hull in _PVP_HULL_WOR
     "Assault Frigates", "Interceptors", "Covert Ops", "Electronic Attack Ships",
     "Heavy Assault Cruisers", "Heavy Interdiction Cruisers", "Recon Ships",
     "Interdictors", "Lancer Dreadnoughts",
+    # Triglavian/EDENCOM ship-license skills — only became resolvable in
+    # SKILL_TYPE_IDS after skill_categories_data.py's 2026-09-02 all-skills
+    # regeneration (this file's own docstring update explains why they
+    # were previously excluded as stale-claimed "not player-trainable").
+    # An earlier version of this set omitted these explicitly, which
+    # silently left most Triglavian ships (Vedmak, Leshak, Damavik, etc.)
+    # excluded even after their skill names started resolving — caught by
+    # re-running this generator and checking which of the 18 previously
+    # skip-logged ships actually made it into the PVP list afterward.
+    "Precursor Frigate", "Precursor Destroyer", "Precursor Cruiser",
+    "Precursor Battlecruiser", "Precursor Battleship", "Precursor Dreadnought",
+    "EDENCOM Frigate", "EDENCOM Cruiser", "EDENCOM Battleship",
 }
 # Verified live (2026-09-02): "Mining Destroyer" is a real skill (Pioneer,
 # Perseverance, Outrider) — not a guess, confirmed via a first generator

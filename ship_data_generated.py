@@ -1635,6 +1635,36 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 0.0
         }
     },
+    "Damavik": {
+        "requires": [
+            [
+                "Precursor Frigate",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 200.0,
+            "armor_hp": 720.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
+    "Skybreaker": {
+        "requires": [
+            [
+                "EDENCOM Frigate",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 800.0,
+            "armor_hp": 210.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Probe Fleet Issue": {
         "requires": [
             [
@@ -2222,6 +2252,51 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 5.0
         }
     },
+    "Vedmak": {
+        "requires": [
+            [
+                "Precursor Cruiser",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 800.0,
+            "armor_hp": 3300.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
+    "Rodiva": {
+        "requires": [
+            [
+                "Precursor Cruiser",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 500.0,
+            "armor_hp": 2200.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 3.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
+    "Stormbringer": {
+        "requires": [
+            [
+                "EDENCOM Cruiser",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 4000.0,
+            "armor_hp": 600.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Raven": {
         "requires": [
             [
@@ -2730,6 +2805,36 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 6.0
         }
     },
+    "Leshak": {
+        "requires": [
+            [
+                "Precursor Battleship",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 3850.0,
+            "armor_hp": 11550.0,
+            "shield_recharge_ms": 2500000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
+    "Thunderchild": {
+        "requires": [
+            [
+                "EDENCOM Battleship",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 13500.0,
+            "armor_hp": 4620.0,
+            "shield_recharge_ms": 2500000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Erebus": {
         "requires": [
             [
@@ -3126,6 +3231,25 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 4.0
         }
     },
+    "Nergal": {
+        "requires": [
+            [
+                "Precursor Frigate",
+                5
+            ],
+            [
+                "Assault Frigates",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 225.0,
+            "armor_hp": 1120.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Geri": {
         "requires": [
             [
@@ -3373,6 +3497,25 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 3.0
         }
     },
+    "Ikitursa": {
+        "requires": [
+            [
+                "Precursor Cruiser",
+                5
+            ],
+            [
+                "Heavy Assault Cruisers",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 850.0,
+            "armor_hp": 3450.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Bestla": {
         "requires": [
             [
@@ -3589,6 +3732,21 @@ GENERATED_PVP_SHIPS = {
             "shield_recharge_ms": 1800000.0,
             "turret_hardpoints": 6.0,
             "launcher_hardpoints": 3.0
+        }
+    },
+    "Drekavac": {
+        "requires": [
+            [
+                "Precursor Battlecruiser",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 1400.0,
+            "armor_hp": 7450.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
         }
     },
     "Cyclone Fleet Issue": {
@@ -3826,6 +3984,21 @@ GENERATED_PVP_SHIPS = {
             "shield_recharge_ms": 625000.0,
             "turret_hardpoints": 0.0,
             "launcher_hardpoints": 7.0
+        }
+    },
+    "Kikimora": {
+        "requires": [
+            [
+                "Precursor Destroyer",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 450.0,
+            "armor_hp": 1150.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
         }
     },
     "Coercer Navy Issue": {
@@ -4176,6 +4349,29 @@ GENERATED_PVP_SHIPS = {
             "shield_recharge_ms": 15000000.0,
             "turret_hardpoints": 0.0,
             "launcher_hardpoints": 3.0
+        }
+    },
+    "Zirnitra": {
+        "requires": [
+            [
+                "Capital Ships",
+                1
+            ],
+            [
+                "Precursor Dreadnought",
+                1
+            ],
+            [
+                "Jump Drive Operation",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 58800.0,
+            "armor_hp": 170000.0,
+            "shield_recharge_ms": 15000000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
         }
     },
     "Naglfar Fleet Issue": {
@@ -4876,6 +5072,25 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 4.0
         }
     },
+    "Hydra": {
+        "requires": [
+            [
+                "Precursor Frigate",
+                5
+            ],
+            [
+                "Covert Ops",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 550.0,
+            "armor_hp": 940.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Sidewinder": {
         "requires": [
             [
@@ -5223,6 +5438,25 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 0.0
         }
     },
+    "Zarmazd": {
+        "requires": [
+            [
+                "Precursor Cruiser",
+                5
+            ],
+            [
+                "Logistics Cruisers",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 650.0,
+            "armor_hp": 3200.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 3.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Falcon": {
         "requires": [
             [
@@ -5397,6 +5631,25 @@ GENERATED_PVP_SHIPS = {
             "shield_recharge_ms": 1250000.0,
             "turret_hardpoints": 3.0,
             "launcher_hardpoints": 2.0
+        }
+    },
+    "Tiamat": {
+        "requires": [
+            [
+                "Precursor Cruiser",
+                5
+            ],
+            [
+                "Recon Ships",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 2600.0,
+            "armor_hp": 3800.0,
+            "shield_recharge_ms": 1250000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
         }
     },
     "Cobra": {
@@ -5964,6 +6217,25 @@ GENERATED_PVP_SHIPS = {
             "launcher_hardpoints": 4.0
         }
     },
+    "Babaroga": {
+        "requires": [
+            [
+                "Precursor Battleship",
+                5
+            ],
+            [
+                "Marauders",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 4000.0,
+            "armor_hp": 12000.0,
+            "shield_recharge_ms": 2500000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
+        }
+    },
     "Rook": {
         "requires": [
             [
@@ -6464,6 +6736,25 @@ GENERATED_PVP_SHIPS = {
             "shield_recharge_ms": 625000.0,
             "turret_hardpoints": 3.0,
             "launcher_hardpoints": 1.0
+        }
+    },
+    "Draugur": {
+        "requires": [
+            [
+                "Precursor Destroyer",
+                5
+            ],
+            [
+                "Command Destroyers",
+                1
+            ]
+        ],
+        "stats": {
+            "shield_capacity": 475.0,
+            "armor_hp": 1250.0,
+            "shield_recharge_ms": 625000.0,
+            "turret_hardpoints": 1.0,
+            "launcher_hardpoints": 0.0
         }
     },
     "Apostle": {
