@@ -199,15 +199,24 @@ def get_assets_data(assets, top_n=8):
 
 
 _FIT_SLOT_PREFIXES = ("HiSlot", "MedSlot", "LoSlot", "RigSlot", "DroneBay")
-_MODULE_SKILL_REQ_CACHE = {}
+_MODULE_TYPE_INFO_CACHE = {}
 
 
-def _module_required_skills(type_id):
-    """Real requiredSkill/requiredSkillLevel dogma attributes for a
-    fitted module or loaded charge — same verified pattern already used
-    for ships and mining crystals this session. Cached: a module's own
-    skill requirement never changes, so an unchanged fit costs zero
-    extra ESI calls on the next dashboard refresh.
+def _module_type_info(type_id):
+    """Real dogma/market info for a fitted module or loaded charge —
+    same verified pattern already used for ships and mining crystals
+    this session. Cached: none of this changes for a given type_id, so
+    repeat lookups (an unchanged fit, or a module already seen as an
+    upgrade candidate for a different fitted item) cost zero extra ESI
+    calls.
+
+    Beyond requiredSkill/requiredSkillLevel (used by get_current_fit_data
+    for skill-gap tips), also captures market_group_id/tech_level/
+    meta_level — real, CCP-ranked fields (techLevel = attribute 422,
+    metaLevel = attribute 633, both verified live via
+    /dogma/attributes/{id}/) needed by _fit_upgrade_tips() to find a
+    genuinely better variant of a fitted module (e.g. Miner I -> Miner II)
+    via its real market-group siblings, not a guessed stat comparison.
 
     Also warms esi.resolve_type_name()'s own cache with the item's name
     from this same response — that endpoint (/universe/types/{id}/) was
@@ -215,7 +224,7 @@ def _module_required_skills(type_id):
     dogma_attributes, once by resolve_type_name() for the name alone);
     get_current_fit_data() calls this function first so the second call
     hits the warmed cache instead of refetching."""
-    if type_id not in _MODULE_SKILL_REQ_CACHE:
+    if type_id not in _MODULE_TYPE_INFO_CACHE:
         t = esi.get(f"/universe/types/{type_id}/", datasource="tranquility")
         esi._TYPE_NAME_CACHE.setdefault(type_id, t["name"])
         by_attr = {a["attribute_id"]: a["value"] for a in t.get("dogma_attributes", [])}
@@ -225,8 +234,34 @@ def _module_required_skills(type_id):
             if skill_type_id:
                 level = int(by_attr.get(level_attr, 1))
                 reqs.append((esi.resolve_type_name(int(skill_type_id)), level))
-        _MODULE_SKILL_REQ_CACHE[type_id] = reqs
-    return _MODULE_SKILL_REQ_CACHE[type_id]
+        _MODULE_TYPE_INFO_CACHE[type_id] = {
+            "name": t["name"],
+            "required_skills": reqs,
+            "market_group_id": t.get("market_group_id"),
+            "tech_level": by_attr.get(422, 1.0),
+            "meta_level": by_attr.get(633, 0.0),
+            "published": t.get("published", False),
+        }
+    return _MODULE_TYPE_INFO_CACHE[type_id]
+
+
+_MARKET_GROUP_TYPES_CACHE = {}
+
+
+def _market_group_types(market_group_id):
+    """Real sibling type_ids sharing a module's market group — verified
+    live (2026-09-03): this is the exact real "Variations" grouping the
+    in-game fitting window shows (Tech I/II/Storyline/Faction tabs), not
+    a guessed relationship. E.g. group 1039 "Mining Lasers" contains
+    both Miner I and Miner II. Cached: market-group membership doesn't
+    change during a session."""
+    if market_group_id not in _MARKET_GROUP_TYPES_CACHE:
+        try:
+            g = esi.get(f"/markets/groups/{market_group_id}/", datasource="tranquility")
+            _MARKET_GROUP_TYPES_CACHE[market_group_id] = g.get("types", [])
+        except requests.RequestException:
+            _MARKET_GROUP_TYPES_CACHE[market_group_id] = []
+    return _MARKET_GROUP_TYPES_CACHE[market_group_id]
 
 
 def get_current_fit_data(assets, ship_item_id):
@@ -254,12 +289,12 @@ def get_current_fit_data(assets, ship_item_id):
     ]
     result = []
     for a in fitted:
-        required_skills = _module_required_skills(a["type_id"])  # warms the name cache below
+        info = _module_type_info(a["type_id"])  # warms the name cache below
         result.append({
             "type_id": a["type_id"],
             "name": esi.resolve_type_name(a["type_id"]),
             "slot": a.get("location_flag"),
-            "required_skills": required_skills,
+            "required_skills": info["required_skills"],
         })
     return result
 
@@ -1336,6 +1371,134 @@ def _fit_completeness_tips(fit_data, trained, ship_name, limit=3):
     return tips[:limit]
 
 
+_TIER_SUFFIX_RE = re.compile(r"\s+(?:I|II|III|IV|V)$")
+
+
+def _base_item_name(name):
+    """Strips a trailing roman-numeral tier suffix (Miner I -> Miner,
+    Hobgoblin II -> Hobgoblin) so plain tier variants of the same base
+    module compare equal in _same_module_family()."""
+    return _TIER_SUFFIX_RE.sub("", name)
+
+
+def _same_module_family(name_a, name_b):
+    """Real, name-grounded "same base module, different tier" check —
+    needed because market_group_id ALONE is too coarse to trust for
+    upgrade suggestions. Verified live (2026-09-03): ESI's "Mining
+    Drones" market group bundles ore-mining drones AND ice-harvesting
+    drones together (they share NEITHER a specific purpose nor even
+    group_id, just the broad shopping category), and its mining-crystal
+    groups bundle every ore-specific crystal Type A-F together — none
+    of these are real upgrades of each other despite sharing a market
+    group. Two items are the same family if their tier-stripped base
+    names are equal, or one's word sequence is a trailing suffix of the
+    other's — the latter covers real meta-named variants (e.g.
+    "Enduring Multispectrum Shield Hardener", a brand-prefixed T1
+    variant of "Multispectrum Shield Hardener II") without matching
+    unrelated items that merely share a trailing word by coincidence."""
+    a_words = _base_item_name(name_a).split()
+    b_words = _base_item_name(name_b).split()
+    if not a_words or not b_words:
+        return False
+    shorter, longer = (a_words, b_words) if len(a_words) <= len(b_words) else (b_words, a_words)
+    return longer[-len(shorter):] == shorter
+
+
+def _fit_upgrade_tips(fit_data, trained, limit=3):
+    """Skills tab — for each real fitted module (or loaded charge/carried
+    drone — same "active gear" scope get_current_fit_data already uses),
+    is there a genuinely better variant available (e.g. Miner I -> Miner
+    II), and does the character have the skill to fit it? Not a guessed
+    stat comparison — uses the real market-group "Variations"
+    relationship ESI exposes (the exact same grouping the in-game
+    fitting window's own Variations tab shows: Tech I/II/Storyline/
+    Faction, verified live 2026-09-03) plus CCP's own tech_level/
+    meta_level ranking to find a real upgrade, filtered through
+    _same_module_family() (a market group alone isn't a reliable enough
+    "same item" signal — see that function's docstring for the real
+    false positives this caught during testing), then checks the real
+    skill gap against it.
+
+    Two distinct tip flavors, in priority order: "you already qualify —
+    go refit" (every required skill is already trained, so this costs
+    nothing to act on) ranks above "train X to unlock this upgrade"
+    (a real gap remains)."""
+    market_group_ids = set()
+    for module in fit_data:
+        mgid = _module_type_info(module["type_id"]).get("market_group_id")
+        if mgid:
+            market_group_ids.add(mgid)
+    if not market_group_ids:
+        return []
+
+    sibling_ids = set()
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        for types in ex.map(_market_group_types, market_group_ids):
+            sibling_ids.update(types)
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        list(ex.map(_module_type_info, sibling_ids))
+
+    seen_pairs = set()
+    ready_to_refit = []
+    need_training = []
+
+    for module in fit_data:
+        current = _module_type_info(module["type_id"])
+        market_group_id = current.get("market_group_id")
+        if not market_group_id:
+            continue
+        current_rank = (current["tech_level"], current["meta_level"])
+
+        best = None
+        best_rank = current_rank
+        for sibling_id in _market_group_types(market_group_id):
+            if sibling_id == module["type_id"]:
+                continue
+            sibling = _module_type_info(sibling_id)
+            if not sibling["published"]:
+                continue
+            if not _same_module_family(current["name"], sibling["name"]):
+                continue
+            rank = (sibling["tech_level"], sibling["meta_level"])
+            if rank > best_rank:
+                best, best_rank = sibling, rank
+
+        if not best:
+            continue
+        pair_key = (module["type_id"], best["name"])
+        if pair_key in seen_pairs:
+            continue
+        seen_pairs.add(pair_key)
+
+        missing = []
+        for skill_name, level in best["required_skills"]:
+            skill_id = skill_plan.SKILL_TYPE_IDS.get(skill_name)
+            have = trained.get(skill_id, 0) if skill_id else 0
+            if have < level:
+                missing.append(f"{skill_name} to {skill_plan.ROMAN.get(level, str(level))}")
+
+        why = (
+            f"{best['name']} is a real, higher-tier variant of {module['name']} "
+            "(the same market-group \"Variations\" relationship the in-game fitting "
+            "window shows), ranked by CCP's own tech/meta level, not a guessed stat comparison."
+        )
+        if missing:
+            need_training.append({
+                "text": f"{module['name']} has a real upgrade: {best['name']} — still need {', '.join(missing)}.",
+                "why": why,
+            })
+        else:
+            ready_to_refit.append({
+                "text": (
+                    f"You already qualify for {best['name']} — a real upgrade over the "
+                    f"{module['name']} currently fitted. Consider refitting."
+                ),
+                "why": f"{why} Every skill it requires is already trained.",
+            })
+
+    return (ready_to_refit + need_training)[:limit]
+
+
 _EMPTY_SKILL_PLANS = {cat: [] for cat in ("Mining", "Industry", "PVP", "Quality of Life", "Mission Running", "Exploration")}
 
 
@@ -1466,6 +1629,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             fit_completeness_tips = _fit_completeness_tips(
                 fit_data, trained_skills, ship.get("ship_name") or "your ship"
             )
+            fit_upgrade_tips = _fit_upgrade_tips(fit_data, trained_skills, limit=2)
             mission_running_stats = {
                 "mission_isk": profile["mission_activity"]["mission_isk"],
                 "mission_count": profile["mission_activity"]["mission_count"],
@@ -1477,6 +1641,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             unavailable_tip = [{"text": "Skill-based tips aren't available right now.", "why": skills_perm["reason"]}]
             mining_skill_tips = industry_skill_tips = pvp_skill_tips = skills_tab_tips = mission_skill_tips = unavailable_tip
             fit_completeness_tips = []
+            fit_upgrade_tips = []
             mission_running_stats = {
                 "mission_isk": 0, "mission_count": 0, "bounty_isk": 0, "bounty_count": 0,
                 "window_days": mining_days,
@@ -1491,7 +1656,7 @@ def get_dashboard_data(mining_days=7, hours_per_day=None, vault_plex_owned=0):
             ),
             "PVP": pvp_skill_tips + skill_plan.rank_ship_tips(trained_skills, ALL_PVP_SHIPS, limit=2),
             "Mission Running": mission_skill_tips,
-            "Skills": skills_tab_tips + fit_completeness_tips,
+            "Skills": skills_tab_tips + fit_completeness_tips + fit_upgrade_tips,
             "Corporation": get_corp_tips(corp_overview_data),
         }
 

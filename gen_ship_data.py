@@ -35,7 +35,7 @@ ship that's always instantly flyable.
 
 Required-skill dogma attributes: verified live (2026-09-02) that ships can
 need up to 6 required skills, not just the 3 the existing
-_module_required_skills() helper in dashboard.py checks for fitted
+_module_type_info() helper in dashboard.py checks for fitted
 modules — e.g. the Loki (Tech III Strategic Cruiser) needs 5:
 Minmatar Strategic Cruiser (hull) + 4 subsystem skills. Attribute ID pairs,
 each confirmed via GET /dogma/attributes/{id}/ before trusting them:
